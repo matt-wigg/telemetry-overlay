@@ -23,7 +23,7 @@ internal sealed class SettingsWindow : Window
     }
 
     internal SettingsWindow(AppSettings settings, Action<AppSettings, int> apply, Action advanced,
-        Func<string> diagnostics, Action toggle, Action edit, Action capture, Func<int> currentTarget)
+        Func<string> diagnostics, Action toggle, Action capture, Func<int> currentTarget)
     {
         Title = "Telemetry · Controls"; Width = 760; Height = 740; MinWidth = 700; MinHeight = 620;
         Background = ColorBrush("#181818"); Foreground = ColorBrush("#E8E8E8");
@@ -47,7 +47,6 @@ internal sealed class SettingsWindow : Window
         header.Children.Add(identity);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
         AddButton(actions, "Show / hide", toggle);
-        AddButton(actions, "Move / resize", edit);
         header.Children.Add(actions);
 
         var footer = new DockPanel { Margin = new Thickness(0, 18, 0, 0), LastChildFill = true };
@@ -129,12 +128,11 @@ internal sealed class SettingsWindow : Window
         var startup = Toggle(general, "Launch at Windows sign-in", settings.StartAtSignIn);
         var show = Toggle(general, "Show widget on launch", settings.ShowOnLaunch);
         Section(general, "Shortcuts");
-        var key = Field(general, "Show / hide · Ctrl + Alt +", settings.ToggleKey, "Choose A–Z. E, R and S are reserved.");
+        var key = Field(general, "Show / hide · Ctrl + Alt +", settings.ToggleKey, "Choose A–Z. R and S are reserved.");
         Readout(general, "Open Controls", "Ctrl + Alt + S");
-        Readout(general, "Move / resize", "Ctrl + Alt + E");
         Readout(general, "Record / stop", "Ctrl + Alt + R");
         Readout(general, "Lock after positioning", "Escape");
-        Details(general, "Positioning", "Follow mode is click-through and tracks the active application's display. Free placement stays on its chosen display while you use other apps; its header selects the process to monitor. Unlock with Ctrl+Alt+E to drag the body or resize an edge. Moving across displays updates the fixed display. Each display keeps its own free position.");
+        Details(general, "Positioning", "Follow mode tracks the active application's display. Free placement stays on its chosen display while you use other apps; its header selects the process to monitor. Drag the top-right MOVE handle anytime, or resize an edge. Dragging switches to free placement. Moving across displays updates the fixed display. Each display keeps its own free position.");
 
         var appearance = Page("Appearance");
         Section(appearance, "Size");

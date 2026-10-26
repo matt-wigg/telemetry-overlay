@@ -11,32 +11,31 @@ Telemetry is a native Windows desktop application written in C# on .NET 10. It u
 - System CPU utilization, RAM, commit accounting and target-process CPU/memory.
 - NVIDIA GPU utilization, temperature, power/limit, graphics clock, fan duty, VRAM and supported clock-limit reasons through the installed driver's NVML API.
 - DirectX application present cadence through our own Windows ETW collector: rolling FPS, frame time and Low FPS in the widget; P99 and exact statistics in exports.
-- Follow-active-app mode or a free desktop widget with an application picker; drag and edge-resize in edit mode, per-monitor placement and Windows DPI scaling.
+- Follow-active-app mode or a free desktop widget with an application picker; always-available top-right dragging and edge resizing, per-monitor placement and Windows DPI scaling.
 - Global shortcuts, tray controls, optional sign-in launch, editable colors/fonts, row ordering and recording exports.
 - Bounded buffers, explicit unavailable readings and capture-loss reporting.
 
 ## Install
 
-Download `Telemetry-Setup-0.3.1.exe` from [Releases](https://github.com/matt-wigg/telemetry-overlay/releases). It installs per user and includes an uninstaller. A portable ZIP is also available. These initial builds are unsigned; publisher signing is a future distribution milestone.
+Download `Telemetry-Setup-0.3.2.exe` from [Releases](https://github.com/matt-wigg/telemetry-overlay/releases). It installs per user and includes an uninstaller. A portable ZIP is also available. These initial builds are unsigned; publisher signing is a future distribution milestone.
 
 Launch **Telemetry Controls** from Start. The panel also has a tray icon. No extra sensor setup is needed for standard monitoring.
 
 | Shortcut | Action |
 | --- | --- |
 | Ctrl+Alt+O | Show/hide the overlay (letter configurable) |
-| Ctrl+Alt+E | Unlock/lock placement; drag edges to resize |
 | Ctrl+Alt+S | Open Controls |
 | Ctrl+Alt+R | Start/stop capture |
 | Escape, while editing | Lock placement |
 
-The widget contains measurements, an optional application picker and a compact status strip with shortcut keycaps. Configuration stays in Controls. Use Controls → Move / resize or Ctrl+Alt+E to unlock placement. While editing it is also available in Alt+Tab. Closing Controls keeps the tray app running; choose Quit in the tray to exit. On a smaller desktop the widget temporarily fits itself to the available space without overwriting your preferred dimensions.
+The widget contains measurements, an optional application picker and a compact status strip with shortcut keycaps. Configuration stays in Controls. Drag the top-right MOVE handle anytime, or drag an edge to resize. Dragging switches to free placement and saves the destination display and position. Closing Controls keeps the tray app running; choose Quit in the tray to exit. On a smaller desktop the widget temporarily fits itself to the available space without overwriting your preferred dimensions.
 
 ## Choose what to follow
 
 In Controls → General, choose a **Widget mode**:
 
-- **Follow active app** tracks the foreground application's display and snaps to your selected display corner. The locked panel passes mouse input through to the game.
-- **Free placement** stays on a fixed display while other applications gain focus. Choose a running application from the header; its FPS and App CPU/RAM readings stay selected. The header is interactive in this mode, so the widget receives mouse clicks. Unlock placement to move it across displays or resize it; locking retains its new display and position.
+- **Follow active app** tracks the foreground application's display and snaps to your selected display corner. The widget receives mouse input so its drag handle and resize edges remain available.
+- **Free placement** stays on a fixed display while other applications gain focus. Choose a running application from the header; its FPS and App CPU/RAM readings stay selected. The header is interactive in this mode, so the widget receives mouse clicks. Use the top-right MOVE handle to move it across displays; release to save its new display and position. Resize directly from an edge.
 
 The picker separates application names from process IDs and supports typing a name. Enable **Include background processes** to list accessible processes without a main window. Services usually have CPU/memory readings but no graphics Presents, so FPS can be unavailable. System CPU, GPU, RAM and other hardware rows always describe the machine, not exclusive resource use by the selected app.
 

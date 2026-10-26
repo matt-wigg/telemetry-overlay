@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2 — 2026-10-26
+
+- Make the top-right MOVE handle draggable in every placement mode, with edge resizing always available.
+- Remove the placement lock, Controls/tray toggle and Ctrl+Alt+E binding; E is available as a visibility shortcut.
+- Dragging switches to free placement and remembers the destination display and position.
+- Keep the widget mouse-interactive so the handle is reachable without unlocking.
+
 ## 0.3.1 — 2026-10-26
 
 - Flush active ETW buffers on the collector's 500 ms sampling cadence. Querying trace statistics alone left presentation events buffered long enough to intermittently blank FPS during continuous rendering.

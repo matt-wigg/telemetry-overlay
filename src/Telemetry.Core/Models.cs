@@ -91,7 +91,7 @@ public sealed class AppSettings
         if (!double.IsFinite(Scale) || Scale < .75 || Scale > 2) throw new InvalidDataException("Scale must be 0.75–2.");
         if (!double.IsFinite(Opacity) || Opacity < .5 || Opacity > 1) throw new InvalidDataException("Opacity must be 0.5–1.");
         if (TargetFps is < 24 or > 1000) throw new InvalidDataException("Target FPS must be 24–1000.");
-        if (ToggleKey.Length != 1 || ToggleKey[0] is < 'A' or > 'Z' || ToggleKey is "E" or "R" or "S") throw new InvalidDataException("Hotkey must be A–Z, excluding E, R and S (reserved shortcuts).");
+        if (ToggleKey.Length != 1 || ToggleKey[0] is < 'A' or > 'Z' || ToggleKey is "R" or "S") throw new InvalidDataException("Hotkey must be A–Z, excluding R and S (reserved shortcuts).");
         if (MonitorMode is not ("Foreground" or "Pointer" or "Pinned")) throw new InvalidDataException("Invalid monitor mode.");
         if (FollowCorner is not ("TopLeft" or "TopRight" or "BottomLeft" or "BottomRight")) throw new InvalidDataException("Invalid follow corner.");
         foreach (var pair in new[] { (CpuWarningC, CpuCriticalC), (GpuWarningC, GpuCriticalC) })

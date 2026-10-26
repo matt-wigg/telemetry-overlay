@@ -17,7 +17,7 @@ try {
     $process = Start-Process -FilePath $exe -ArgumentList '--smoke-test', ('"' + $report + '"') -WindowStyle Hidden -Wait -PassThru
     if ($process.ExitCode -ne 0) { throw 'Native smoke process failed.' }
     $smoke = Get-Content -Raw -LiteralPath (Join-Path $report 'smoke.json') | ConvertFrom-Json
-    foreach ($name in @('trayVisible','overlayVisible','controlsVisible','hideWorks','showWorks','editReceivesInput','resizeWorks','positionRemembered','toggleHotkeyRegistered','editHotkeyRegistered','captureHotkeyRegistered','settingsHotkeyRegistered','clickThrough','noActivate')) {
+    foreach ($name in @('trayVisible','overlayVisible','controlsVisible','hideWorks','showWorks','dragReceivesInput','permanentDragWorks','resizeWorks','positionRemembered','toggleHotkeyRegistered','captureHotkeyRegistered','settingsHotkeyRegistered','dragHandleReachable','noActivate')) {
         if ($smoke.$name -ne $true) { throw "Native verification failed: $name" }
     }
     if ($smoke.displayChecks.Count -ne $smoke.monitorCount) { throw 'Not every attached display was checked.' }

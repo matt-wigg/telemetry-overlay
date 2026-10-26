@@ -24,7 +24,7 @@ internal sealed class OverlayWindow : Window
     private Native.Point _dragStart;
     private Native.Rect _dragBounds;
     private System.Drawing.Rectangle _lastWorkingArea;
-    internal bool Editing { get; private set; }
+    private bool _resizing;
     internal double RenderScale => _canvas.RenderScale;
     internal bool NativeVisible => _handle != 0 && Native.IsWindowVisible(_handle);
     internal event Action? Moved;
@@ -65,12 +65,12 @@ internal sealed class OverlayWindow : Window
             HwndSource.FromHwnd(_handle)?.AddHook(ResizeHook);
             ApplyInputMode();
         };
-        KeyDown += (_, e) => { if (e.Key == Key.Escape) SetEditing(false); };
-        DpiChanged += (_, _) => Dispatcher.BeginInvoke(() => { if (!Editing) Place(true); });
+        KeyDown += (_, e) => { if (e.Key == Key.Escape) FinishDrag(); };
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(() => { if (!_dragging && !_resizing) Place(true); });
         SizeChanged += (_, _) =>
         {
             LayoutPicker();
-            if (!Editing || _applyingSize) return;
+            if (_applyingSize) return;
             _settings.PanelWidth = Math.Clamp(ActualWidth / _canvas.RenderScale, 300, 900);
             _settings.PanelHeight = Math.Clamp(ActualHeight / _canvas.RenderScale, _settings.GetMinimumHeight(), 1400);
         };
@@ -116,7 +116,6 @@ internal sealed class OverlayWindow : Window
     }
     internal bool VerifyPickerInputRouting()
     {
-        SetEditing(true);
         _targetPicker.IsDropDownOpen = true;
         try
         {
@@ -127,8 +126,37 @@ internal sealed class OverlayWindow : Window
             ResizeHook(_handle, 0x0084, 0, (nint)corner, ref hitHandled);
             return !pressHandled && !hitHandled && !_dragging;
         }
-        finally { _targetPicker.IsDropDownOpen = false; SetEditing(false); }
+        finally { _targetPicker.IsDropDownOpen = false; }
     }
+    internal bool VerifyDragInputRouting()
+    {
+        static nint Coordinates(int x, int y) => (nint)(((long)(ushort)y << 16) | (ushort)x);
+        foreach (string mode in new[] { "Foreground", "Pinned", "Pointer" })
+        {
+            _settings.MonitorMode = mode;
+            RefreshTheme();
+            Native.GetWindowRect(_handle, out var bounds);
+            bool hitHandled = false;
+            var hit = ResizeHook(_handle, 0x0084, 0, Coordinates(bounds.Right - 2, bounds.Top + 2), ref hitHandled);
+            if (!hitHandled || hit != 1) return false;
+            bool bodyHandled = false;
+            ResizeHook(_handle, 0x0201, 0, Coordinates(100, 100), ref bodyHandled);
+            if (bodyHandled || _dragging) return false;
+            bool pressHandled = false;
+            ResizeHook(_handle, 0x0201, 0, Coordinates(bounds.Right - bounds.Left - 2, 2), ref pressHandled);
+            if (!pressHandled || !_dragging || _settings.MonitorMode != "Pinned") return false;
+            Native.SetWindowPos(_handle, new nint(-1), bounds.Left - 30, bounds.Top + 30, 0, 0, 0x0011);
+            bool cancelHandled = false;
+            ResizeHook(_handle, 0x001F, 0, 0, ref cancelHandled);
+            if (_dragging || Native.GetCapture() == _handle || !_settings.Placements.ContainsKey(CurrentMonitor)) return false;
+            Native.GetWindowRect(_handle, out var saved);
+            Place(true);
+            Native.GetWindowRect(_handle, out var restored);
+            if (saved.Left != restored.Left || saved.Top != restored.Top) return false;
+        }
+        return true;
+    }
+
     private void LayoutPicker(double? previewWidth = null)
     {
         double scale = RenderScale;
@@ -149,16 +177,6 @@ internal sealed class OverlayWindow : Window
         return surface;
     }
 
-    internal void SetEditing(bool enabled)
-    {
-        if (!enabled) FinishDrag();
-        Editing = enabled;
-        ApplyInputMode();
-        _canvas.Editing = enabled;
-        _canvas.InvalidateVisual();
-        if (enabled) { Activate(); Keyboard.Focus(this); }
-        if (!enabled) { SavePosition(); Place(true); Moved?.Invoke(); }
-    }
     private void FinishDrag()
     {
         if (!_dragging) return;
@@ -185,17 +203,24 @@ internal sealed class OverlayWindow : Window
         // Avoid Windows' move loop, which Aero Snaps widgets at display boundaries.
         // WPF captures mouse input to the owner while its ComboBox popup is open.
         // Leave those messages to WPF so clicking a list item cannot start a drag.
-        if (message == 0x0201 && Editing && !_targetPicker.IsDropDownOpen)
+        if (message == 0x0201 && !_targetPicker.IsDropDownOpen)
         {
-            // The free-placement header is an interactive selector, not a drag handle.
-            double clientY = (short)((lParam.ToInt64() >> 16) & 0xffff) / VisualTreeHelper.GetDpi(this).DpiScaleY;
-            if (_settings.MonitorMode == "Pinned" && clientY < 36 * RenderScale) return 0;
+            var dpi = VisualTreeHelper.GetDpi(this);
+            double clientX = (short)(lParam.ToInt64() & 0xffff) / dpi.DpiScaleX;
+            double clientY = (short)((lParam.ToInt64() >> 16) & 0xffff) / dpi.DpiScaleY;
+            if (!IsDragHandle(clientX, clientY)) return 0;
             _dragStart = new Native.Point { X = (short)(lParam.ToInt64() & 0xffff), Y = (short)((lParam.ToInt64() >> 16) & 0xffff) };
             if (Native.ClientToScreen(hWnd, ref _dragStart) && Native.GetWindowRect(hWnd, out _dragBounds))
             {
+                // Capture across other windows requires the widget to be foreground.
+                var style = Native.GetWindowLongPtr(hWnd, Native.GwlExStyle).ToInt64();
+                Native.SetWindowLongPtr(hWnd, Native.GwlExStyle, (nint)(style & ~Native.WsExNoActivate));
+                Activate(); Keyboard.Focus(this);
                 Native.SetCapture(hWnd);
                 _dragging = Native.GetCapture() == hWnd;
                 handled = _dragging;
+                if (_dragging) { _settings.MonitorMode = "Pinned"; LayoutPicker(); }
+                ApplyInputMode();
             }
             return 0;
         }
@@ -206,26 +231,30 @@ internal sealed class OverlayWindow : Window
             handled = true; return 0;
         }
         if (_dragging && message is 0x0215 or 0x001F) FinishDrag();
-        if (message == 0x0232 && Editing) { SavePosition(); Moved?.Invoke(); }
-        if (message != 0x0084 || !Editing || _targetPicker.IsDropDownOpen) return 0;
+        if (message == 0x0231) _resizing = true;
+        if (message == 0x0232) { _resizing = false; SavePosition(); Moved?.Invoke(); }
+        if (message != 0x0084 || _targetPicker.IsDropDownOpen) return 0;
         Native.GetWindowRect(hWnd, out var r);
         int x = (short)(lParam.ToInt64() & 0xffff), y = (short)((lParam.ToInt64() >> 16) & 0xffff);
-        int edge = (int)(9 * VisualTreeHelper.GetDpi(this).DpiScaleX);
+        var hitDpi = VisualTreeHelper.GetDpi(this);
+        if (IsDragHandle((x - r.Left) / hitDpi.DpiScaleX, (y - r.Top) / hitDpi.DpiScaleY))
+        { handled = true; return 1; } // HTCLIENT: the top-right corner always starts our drag.
+        int edge = (int)(9 * hitDpi.DpiScaleX);
         bool left = x < r.Left + edge, right = x >= r.Right - edge, top = y < r.Top + edge, bottom = y >= r.Bottom - edge;
         int hit = top ? left ? 13 : right ? 14 : 12 : bottom ? left ? 16 : right ? 17 : 15 : left ? 10 : right ? 11 : 0;
         if (hit != 0) { handled = true; return hit; }
         return 0;
     }
+    internal bool IsDragHandle(double x, double y) =>
+        x >= ActualWidth - 96 * RenderScale && x < ActualWidth && y >= 0 && y < 33 * RenderScale;
+
     private void ApplyInputMode()
     {
         if (_handle == 0) return;
         var style = Native.GetWindowLongPtr(_handle, Native.GwlExStyle).ToInt64();
-        // Expose a normal, keyboard-accessible window while positioning; locked widgets stay out of Alt+Tab.
-        style = Editing
-            ? (style | Native.WsExAppWindow) & ~(Native.WsExTransparent | Native.WsExNoActivate | Native.WsExToolWindow)
-            : _settings.MonitorMode == "Pinned"
-                ? (style | Native.WsExToolWindow) & ~(Native.WsExTransparent | Native.WsExNoActivate | Native.WsExAppWindow)
-                : (style | Native.WsExTransparent | Native.WsExNoActivate | Native.WsExToolWindow) & ~Native.WsExAppWindow;
+        // Keep the permanent drag handle reachable in every placement mode.
+        style = (style | Native.WsExToolWindow) & ~(Native.WsExTransparent | Native.WsExAppWindow);
+        style = _settings.MonitorMode == "Pinned" ? style & ~Native.WsExNoActivate : style | Native.WsExNoActivate;
         Native.SetWindowLongPtr(_handle, Native.GwlExStyle, (nint)style);
     }
     internal void RefreshTheme()
@@ -255,7 +284,7 @@ internal sealed class OverlayWindow : Window
         nint insertAfter = foreground.Pid == Environment.ProcessId && foreground.Window != _handle
             ? foreground.Window : new nint(-1);
         if (IsVisible) Native.SetWindowPos(_handle, insertAfter, 0, 0, 0, 0, 0x0013);
-        if (Editing) return;
+        if (_dragging || _resizing) return;
         Forms.Screen screen;
         if (_settings.MonitorMode == "Pinned") screen = Forms.Screen.AllScreens.FirstOrDefault(s => s.DeviceName == _settings.PinnedMonitor) ?? Forms.Screen.PrimaryScreen!;
         else if (_settings.MonitorMode == "Pointer") { Native.GetCursorPos(out var p); screen = Forms.Screen.FromPoint(new System.Drawing.Point(p.X, p.Y)); }
@@ -287,7 +316,7 @@ internal sealed class OverlayWindow : Window
         _canvas.MonitorLabel = "DISPLAY " + (Array.FindIndex(Forms.Screen.AllScreens, s => s.DeviceName == CurrentMonitor) + 1).ToString("00");
     }
 
-    private void SavePosition()
+    internal void SavePosition()
     {
         Native.GetWindowRect(_handle, out var rect);
         var screen = Forms.Screen.FromHandle(_handle);
@@ -339,7 +368,6 @@ internal sealed class HudCanvas : FrameworkElement
     internal string Status { get; set; } = "Starting collector";
     internal string FpsNote { get; set; } = "Waiting for frames";
     internal string MonitorLabel { get; set; } = "DISPLAY 01";
-    internal bool Editing { get; set; }
     internal bool Recording { get; set; }
     internal bool Stale { get; set; }
     internal double RenderScale { get; set; }
@@ -415,7 +443,7 @@ internal sealed class HudCanvas : FrameworkElement
         dc.PushTransform(new ScaleTransform(RenderScale, RenderScale));
         double height = ActualHeight / RenderScale, width = ActualWidth / RenderScale;
         double rightEdge = width - 18;
-        dc.DrawRectangle(_background, new Pen(Editing ? _accent : new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Rect(.5, .5, width - 1, height - 1));
+        dc.DrawRectangle(_background, new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Rect(.5, .5, width - 1, height - 1));
         void Text(string text, double x, double y, double size, Brush? brush = null, double maxWidth = 280, bool right = false)
         {
             var formatted = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, _font, size, brush ?? _foreground, VisualTreeHelper.GetDpi(this).PixelsPerDip)
@@ -424,7 +452,7 @@ internal sealed class HudCanvas : FrameworkElement
         }
         static string Number(double? value, string format = "0") => value is double v && double.IsFinite(v) ? v.ToString(format, CultureInfo.InvariantCulture) : "—";
         if (_settings.MonitorMode != "Pinned") Text(Target, 18, 13, 12, _foreground, width - 120);
-        Text(Recording ? "[REC]" : MonitorLabel, rightEdge, 11, 10, Recording ? _critical : _accent, right: true);
+        Text(Recording ? "[REC]" : "MOVE ↔", rightEdge, 11, 10, Recording ? _critical : _accent, right: true);
         dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(0, 33), new Point(width, 33));
         var stats = Stale ? null : Statistics;
         DrawFrameHistory(dc, new Rect(1, 34, width - 2, 204));
@@ -472,17 +500,17 @@ internal sealed class HudCanvas : FrameworkElement
             y += rowHeight;
         }
         dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(0, height - 33), new Point(width, height - 33));
-        string state = Stale ? "STALE DATA" : Packet?.DroppedFrames > 0 ? "EVENT LOSS" : Recording ? "RECORDING" : Editing ? "MOVE / RESIZE" : s?.GpuLimitReason ?? (stats is not null ? "PRESENT / LIVE" : Status.StartsWith("FPS permission required", StringComparison.Ordinal) ? "FPS LOCKED" : "NO PRESENTS");
-        Text(state, 18, height - 21, 9, Stale || Packet?.DroppedFrames > 0 || s?.GpuLimitReason is not null ? _warning : Editing ? _accent : _muted, width - 174);
+        string state = Stale ? "STALE DATA" : Packet?.DroppedFrames > 0 ? "EVENT LOSS" : Recording ? "RECORDING" : s?.GpuLimitReason ?? (stats is not null ? "PRESENT / LIVE" : Status.StartsWith("FPS permission required", StringComparison.Ordinal) ? "FPS LOCKED" : "NO PRESENTS");
+        Text(state, 18, height - 21, 9, Stale || Packet?.DroppedFrames > 0 || s?.GpuLimitReason is not null ? _warning : _muted, width - 174);
         Text("Ctrl+Alt", rightEdge - 127, height - 21, 9, _muted, 48);
-        string[] keys = [_settings.ToggleKey, "E", "S"];
+        string[] keys = [_settings.ToggleKey, "S"];
         for (int i = 0; i < keys.Length; i++)
         {
             double x = rightEdge - 72 + i * 26;
             dc.DrawRectangle(null, new Pen(_muted, .6), new Rect(x, height - 26, 20, 19));
             Text(keys[i], x + 7, height - 22, 10, _foreground, 12);
         }
-        if (Editing) dc.DrawLine(new Pen(_accent, 1), new Point(width - 7, height - 3), new Point(width - 3, height - 7));
+        dc.DrawLine(new Pen(_accent, 1), new Point(width - 7, height - 3), new Point(width - 3, height - 7));
         dc.Pop();
     }
 }
