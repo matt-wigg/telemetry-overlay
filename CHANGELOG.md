@@ -7,6 +7,10 @@
 - Reassert visible widget z-order without activation so borderless games cannot obscure it merely by reordering windows.
 - Re-clamp placement after DPI changes and verify placement, resize persistence and visibility on every connected display.
 - Resolve the foreground application immediately when recording starts.
+- Add Ctrl+Alt+S for Controls and align compact shortcut keycaps with the footer status.
+- Fit the widget and Controls to small desktops; preserve the widget's preferred dimensions and refresh the display selector after topology changes.
+- Keep active Controls above the widget and expose the unlocked widget in Alt+Tab for positioning.
+- Reuse an already-enabled FPS session when Enable FPS is chosen again; one approval covers application switching.
 - Live game interaction validation remains a release gate.
 
 ## 0.2.0 — correctness and security review

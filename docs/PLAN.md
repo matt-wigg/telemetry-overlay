@@ -9,13 +9,13 @@ The application is open source under MIT. Source, tests, default configuration, 
 ## Supported first release
 
 1. Native Windows 11 x64 application, optional sign-in startup, tray lifecycle and a single running UI instance.
-2. Configurable show/hide shortcut; dedicated edit and record shortcuts. Conflicts are surfaced, with tray actions available.
+2. Configurable show/hide shortcut; dedicated edit, Controls and record shortcuts. Conflicts are surfaced, with tray actions available.
 3. Automatic foreground-monitor selection, pointer-monitor mode and pinned-monitor mode. Persist placements per display; clamp recovery to visible bounds.
 4. Locked click-through state and explicit edit state with drag/resize. Logical dimensions and interface scale are separate controls.
 5. Windows system/process metrics; NVIDIA telemetry through the installed driver. No additional monitoring tools or sensor-driver installation.
 6. Own targeted DXGI/D3D9 ETW collector. FPS permission is optional and explicitly user-approved through Windows.
 7. Defined live statistics, bounded recording, CSV and JSON export, and capture-loss indication.
-8. A self-contained portable build plus per-user installer/uninstaller. Controls has General, Appearance, Metrics, Capture and Diagnostics pages. The widget has no settings buttons or shortcut instructions.
+8. A self-contained portable build plus per-user installer/uninstaller. Controls has General, Appearance, Metrics, Capture and Diagnostics pages. The widget has only compact shortcut keycaps beside its status, with no configuration fields.
 
 ## Engineering choices
 
@@ -35,7 +35,7 @@ Exact percentile calculations operate on bounded windows, O(F log F). Event appe
 
 ## Versioning and distribution
 
-The canonical checkout is a normal Git repository, separate from the installed application. `main` is the integration branch; feature branches and pull requests hold changes. Every release gets a SemVer tag, release notes, installer, portable ZIP and SHA-256 checksums. Lockfiles and a pinned SDK with patch roll-forward make dependency changes reviewable. GitHub backs up committed/pushed code; it does not back up uncommitted files or local captures. The CI template awaits workflow publishing permission; local verification is available now.
+The canonical checkout is a normal Git repository, separate from the installed application. `main` is the integration branch; feature branches and pull requests hold changes. Every release gets a SemVer tag, release notes, installer, portable ZIP and SHA-256 checksums. Lockfiles and a pinned SDK with patch roll-forward make dependency changes reviewable. GitHub backs up committed/pushed code; it does not back up uncommitted files or local captures. Required CI checks cover Windows builds, regression tests, CodeQL and dependency review.
 
 ## Verification gates
 

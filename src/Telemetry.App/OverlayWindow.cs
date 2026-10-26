@@ -17,6 +17,7 @@ internal sealed class OverlayWindow : Window
     private bool _applyingSize;
     private System.Drawing.Rectangle _lastWorkingArea;
     internal bool Editing { get; private set; }
+    internal double RenderScale => _canvas.RenderScale;
     internal bool NativeVisible => _handle != 0 && Native.IsWindowVisible(_handle);
     internal event Action? Moved;
     internal string CurrentMonitor { get; private set; } = "";
@@ -49,8 +50,8 @@ internal sealed class OverlayWindow : Window
         SizeChanged += (_, _) =>
         {
             if (!Editing || _applyingSize) return;
-            _settings.PanelWidth = Math.Clamp(ActualWidth / _settings.Scale, 300, 900);
-            _settings.PanelHeight = Math.Clamp(ActualHeight / _settings.Scale, 420, 1400);
+            _settings.PanelWidth = Math.Clamp(ActualWidth / _canvas.RenderScale, 300, 900);
+            _settings.PanelHeight = Math.Clamp(ActualHeight / _canvas.RenderScale, _settings.GetMinimumHeight(), 1400);
         };
     }
 
@@ -61,7 +62,7 @@ internal sealed class OverlayWindow : Window
         _canvas.Editing = enabled;
         _canvas.InvalidateVisual();
         if (enabled) { Activate(); Keyboard.Focus(this); }
-        if (!enabled) { SavePosition(); Moved?.Invoke(); }
+        if (!enabled) { SavePosition(); Place(true); Moved?.Invoke(); }
     }
     internal void ShowPanel()
     {
@@ -84,8 +85,11 @@ internal sealed class OverlayWindow : Window
     private void ApplyInputMode()
     {
         if (_handle == 0) return;
-        var style = Native.GetWindowLongPtr(_handle, Native.GwlExStyle).ToInt64() | Native.WsExToolWindow;
-        style = Editing ? style & ~(Native.WsExTransparent | Native.WsExNoActivate) : style | Native.WsExTransparent | Native.WsExNoActivate;
+        var style = Native.GetWindowLongPtr(_handle, Native.GwlExStyle).ToInt64();
+        // Expose a normal, keyboard-accessible window while positioning; locked widgets stay out of Alt+Tab.
+        style = Editing
+            ? (style | Native.WsExAppWindow) & ~(Native.WsExTransparent | Native.WsExNoActivate | Native.WsExToolWindow)
+            : (style | Native.WsExTransparent | Native.WsExNoActivate | Native.WsExToolWindow) & ~Native.WsExAppWindow;
         Native.SetWindowLongPtr(_handle, Native.GwlExStyle, (nint)style);
     }
     internal void RefreshTheme()
@@ -104,10 +108,12 @@ internal sealed class OverlayWindow : Window
     internal void Place(bool force = false)
     {
         if (_handle == 0 || Editing) return;
-        // A borderless game may reorder its own topmost window without changing monitors.
-        // Restore our z-order without activating, moving or resizing the widget.
-        if (IsVisible) Native.SetWindowPos(_handle, new nint(-1), 0, 0, 0, 0, 0x0013);
         var foreground = Native.Foreground();
+        // A borderless game may reorder its own topmost window without changing monitors.
+        // Keep our active Controls window above the widget, without taking focus from either.
+        nint insertAfter = foreground.Pid == Environment.ProcessId && foreground.Window != _handle
+            ? foreground.Window : new nint(-1);
+        if (IsVisible) Native.SetWindowPos(_handle, insertAfter, 0, 0, 0, 0, 0x0013);
         Forms.Screen screen;
         if (_settings.MonitorMode == "Pinned") screen = Forms.Screen.AllScreens.FirstOrDefault(s => s.DeviceName == _settings.PinnedMonitor) ?? Forms.Screen.PrimaryScreen!;
         else if (_settings.MonitorMode == "Pointer") { Native.GetCursorPos(out var p); screen = Forms.Screen.FromPoint(new System.Drawing.Point(p.X, p.Y)); }
@@ -116,12 +122,23 @@ internal sealed class OverlayWindow : Window
         CurrentMonitor = screen.DeviceName;
         var bounds = screen.WorkingArea;
         _lastWorkingArea = bounds;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var layout = PanelLayout.Fit(_settings, Math.Max(1, bounds.Width - 16) / dpi.DpiScaleX, Math.Max(1, bounds.Height - 16) / dpi.DpiScaleY);
+        _applyingSize = true;
+        try
+        {
+            _canvas.RenderScale = layout.Scale;
+            MinWidth = 300 * layout.Scale;
+            MinHeight = _settings.GetMinimumHeight() * layout.Scale;
+            Width = layout.Width; Height = layout.Height;
+        }
+        finally { _applyingSize = false; }
         Native.GetWindowRect(_handle, out var rect);
         int width = Math.Max(100, rect.Right - rect.Left), height = Math.Max(100, rect.Bottom - rect.Top);
         var position = _settings.Placements.GetValueOrDefault(screen.DeviceName, new Placement(bounds.Width - width - 24, 24));
         int x = bounds.Left + (int)Math.Clamp(position.X, 0, Math.Max(0, bounds.Width - width));
         int y = bounds.Top + (int)Math.Clamp(position.Y, 0, Math.Max(0, bounds.Height - height));
-        Native.SetWindowPos(_handle, new nint(-1), x, y, 0, 0, 0x0010 | 0x0001);
+        Native.SetWindowPos(_handle, insertAfter, x, y, 0, 0, 0x0010 | 0x0001);
         _canvas.MonitorLabel = "DISPLAY " + (Array.FindIndex(Forms.Screen.AllScreens, s => s.DeviceName == CurrentMonitor) + 1).ToString("00");
     }
 
@@ -163,7 +180,8 @@ internal sealed class HudCanvas : FrameworkElement
     internal bool Editing { get; set; }
     internal bool Recording { get; set; }
     internal bool Stale { get; set; }
-    internal HudCanvas(AppSettings settings) { _settings = settings; RefreshTheme(); }
+    internal double RenderScale { get; set; }
+    internal HudCanvas(AppSettings settings) { _settings = settings; RenderScale = settings.Scale; RefreshTheme(); }
 
     internal void RefreshTheme()
     {
@@ -194,8 +212,8 @@ internal sealed class HudCanvas : FrameworkElement
     protected override void OnRender(DrawingContext dc)
     {
         base.OnRender(dc);
-        dc.PushTransform(new ScaleTransform(_settings.Scale, _settings.Scale));
-        double height = ActualHeight / _settings.Scale, width = ActualWidth / _settings.Scale;
+        dc.PushTransform(new ScaleTransform(RenderScale, RenderScale));
+        double height = ActualHeight / RenderScale, width = ActualWidth / RenderScale;
         double rightEdge = width - 18;
         dc.DrawRectangle(_background, new Pen(Editing ? _accent : new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Rect(.5, .5, width - 1, height - 1));
         void Text(string text, double x, double y, double size, Brush? brush = null, double maxWidth = 280, bool right = false)
@@ -243,7 +261,7 @@ internal sealed class HudCanvas : FrameworkElement
         var s = Stale ? null : Packet?.Sensors;
         double y = 251;
         int rowCount = _settings.MetricOrder.Count(id => _settings.ShowDetails || id is not ("POWER" or "CLOCK" or "FAN" or "PROCESS"));
-        double rowHeight = Math.Clamp((height - 288) / Math.Max(1, rowCount), 18, 33);
+        double rowHeight = Math.Clamp((height - 290) / Math.Max(1, rowCount), 18, 33);
         foreach (var id in _settings.MetricOrder)
         {
             if (!_settings.ShowDetails && id is "POWER" or "CLOCK" or "FAN" or "PROCESS") continue;
@@ -272,11 +290,18 @@ internal sealed class HudCanvas : FrameworkElement
             if (_severities.GetValueOrDefault(id) is Severity.Warning or Severity.Critical || (id == "GPU" && _severities.GetValueOrDefault("GPUtemp") is Severity.Warning or Severity.Critical)) Text("!", 7, y, 11, _warning);
             y += rowHeight;
         }
-        dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(0, height - 31), new Point(width, height - 31));
-        string state = Stale ? "STALE DATA" : Packet?.DroppedFrames > 0 ? "EVENT LOSS" : Recording ? "RECORDING" : stats is not null ? "PRESENT / LIVE" : Status.StartsWith("FPS permission required", StringComparison.Ordinal) ? "FPS ACCESS REQUIRED" : "NO PRESENTS";
-        Text(state, 18, height - 21, 10, Stale || Packet?.DroppedFrames > 0 ? _warning : _muted, width - 150);
-        Text(s?.GpuLimitReason ?? (Editing ? "UNLOCKED" : ""), rightEdge, height - 21, 10, s?.GpuLimitReason is not null ? _warning : _accent, 114, true);
-        if (Editing) { dc.DrawLine(new Pen(_accent, 1), new Point(width - 14, height - 5), new Point(width - 5, height - 14)); dc.DrawLine(new Pen(_accent, 1), new Point(width - 9, height - 5), new Point(width - 5, height - 9)); }
+        dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(0, height - 33), new Point(width, height - 33));
+        string state = Stale ? "STALE DATA" : Packet?.DroppedFrames > 0 ? "EVENT LOSS" : Recording ? "RECORDING" : Editing ? "MOVE / RESIZE" : s?.GpuLimitReason ?? (stats is not null ? "PRESENT / LIVE" : Status.StartsWith("FPS permission required", StringComparison.Ordinal) ? "FPS LOCKED" : "NO PRESENTS");
+        Text(state, 18, height - 21, 9, Stale || Packet?.DroppedFrames > 0 || s?.GpuLimitReason is not null ? _warning : Editing ? _accent : _muted, width - 174);
+        Text("Ctrl+Alt", rightEdge - 127, height - 21, 9, _muted, 48);
+        string[] keys = [_settings.ToggleKey, "E", "S"];
+        for (int i = 0; i < keys.Length; i++)
+        {
+            double x = rightEdge - 72 + i * 26;
+            dc.DrawRectangle(null, new Pen(_muted, .6), new Rect(x, height - 26, 20, 19));
+            Text(keys[i], x + 7, height - 22, 10, _foreground, 12);
+        }
+        if (Editing) dc.DrawLine(new Pen(_accent, 1), new Point(width - 7, height - 3), new Point(width - 3, height - 7));
         dc.Pop();
     }
 }

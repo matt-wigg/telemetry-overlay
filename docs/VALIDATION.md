@@ -2,9 +2,11 @@
 
 ## 0.3 development checks
 
-The 31-test suite passes. Native verification now exercises every connected display: placement within the work area, resize persistence, position restoration, visibility after toggling and remembered display. These five checks passed on each of two displays, alongside the existing 13 native checks. All five Controls pages and the revised widget were rendered and inspected.
+The 38-test suite passes, including small-desktop fitting, preservation of preferred dimensions and reserved shortcut validation. Native verification now exercises every connected display: placement within the work area, resize persistence, position restoration, visibility after toggling and remembered display. These five checks passed on each of two displays on the earlier build. A later one-display run also passed, including all four hotkey registrations. All five Controls pages and the revised widget were rendered and inspected.
 
-The updated z-order handling and actual-game FPS, physical shortcuts and drag/resize workflow still require hands-on verification before a 0.3 release. Programmatic placement tests alone do not establish game compatibility. Raw screenshots, game settings and recordings remain local and ignored.
+A Cyberpunk 2077 menu capture recorded 36,304 Present intervals and 163 sensor rows, with no reported loss and a confirmed final drain. Independent recomputation from the CSV matched every summary statistic within floating-point rounding. Sequential driver/app samples agreed for utilization, power cap, graphics clock, fan duty and memory totals; GPU temperature uses the integer NVML API. The overlay remained visible after returning focus to the borderless game. These measurements are application Present cadence, not generated/displayed frames or a gameplay performance benchmark.
+
+The desktop subsequently exposed only one smaller display. A repeat game test on both monitors, final physical hotkey/drag/resize checks and verification of the latest window-order changes remain release gates. Programmatic placement tests alone do not establish game compatibility. No game settings were changed. Raw screenshots, game settings and recordings remain local and ignored.
 
 Version 0.2 is a preview, not universal hardware/game certification. Raw evidence stays in ignored local `work/` directories because it includes process names and machine information.
 

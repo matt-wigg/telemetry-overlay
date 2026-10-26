@@ -20,6 +20,11 @@ internal static class SettingsStore
             if (!File.Exists(FilePath)) return new() { StartAtSignIn = IsStartupEnabled() };
             if (new FileInfo(FilePath).Length > 65536) throw new InvalidDataException("Settings file is too large.");
             var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath)) ?? new();
+            if (settings.ToggleKey == "S")
+            {
+                settings.ToggleKey = "O";
+                LoadWarning = "Ctrl+Alt+S now opens Controls. Your visibility shortcut has moved to Ctrl+Alt+O.";
+            }
             settings.Validate();
             settings.StartAtSignIn = IsStartupEnabled();
             return settings;

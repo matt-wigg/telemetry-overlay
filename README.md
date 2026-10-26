@@ -25,14 +25,15 @@ Launch **Telemetry Controls** from Start. The panel also has a tray icon. No ext
 | --- | --- |
 | Ctrl+Alt+O | Show/hide the overlay (letter configurable) |
 | Ctrl+Alt+E | Unlock/lock placement; drag edges to resize |
+| Ctrl+Alt+S | Open Controls |
 | Ctrl+Alt+R | Start/stop capture |
 | Escape, while editing | Lock placement |
 
-The widget contains measurements and a compact status line. All configuration stays in Controls. It passes clicks through while locked; use Controls → Move / resize or Ctrl+Alt+E to unlock it. Closing Controls keeps the tray app running; choose Quit in the tray to exit.
+The widget contains measurements and one compact status strip with shortcut keycaps. All configuration stays in Controls. It passes clicks through while locked; use Controls → Move / resize or Ctrl+Alt+E to unlock it. While editing it is also available in Alt+Tab. Closing Controls keeps the tray app running; choose Quit in the tray to exit. On a smaller desktop the widget temporarily fits itself to the available space without overwriting your preferred dimensions.
 
 ## FPS permission
 
-Windows restricts cross-process event tracing. In Controls → Diagnostics, choose **Enable FPS…** and approve the Windows prompt. Only the collector is elevated; the overlay stays a normal-user process. Permission lasts for the running session. Telemetry does not alter group membership, turn off security features or install a service to avoid this prompt.
+Windows restricts cross-process event tracing. In Controls → Diagnostics, choose **Enable FPS…** and approve the Windows prompt. That one approval covers all applications for the running collector session; switching games does not ask again. Only the collector is elevated; the overlay stays a normal-user process. Exiting Telemetry, restarting its collector or rebooting ends the session. Telemetry does not alter group membership, turn off security features or install a service to avoid this prompt.
 
 FPS is **successful application Present-call cadence**, not display FPS, frame-generated FPS or end-to-end latency. DXGI and Direct3D9 are supported paths. Some Vulkan/OpenGL applications may present through a compatible path; do not assume coverage. This is not a PresentMon replacement with equivalent display-pipeline analysis.
 

@@ -12,7 +12,7 @@ internal static class Native
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool GetNamedPipeClientProcessId(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint processId);
     internal const int GwlExStyle = -20;
-    internal const long WsExTransparent = 0x20, WsExToolWindow = 0x80, WsExNoActivate = 0x08000000;
+    internal const long WsExTransparent = 0x20, WsExToolWindow = 0x80, WsExAppWindow = 0x40000, WsExNoActivate = 0x08000000;
     internal const int WmHotkey = 0x0312;
     [StructLayout(LayoutKind.Sequential)] internal struct Rect { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] internal struct Point { public int X, Y; }

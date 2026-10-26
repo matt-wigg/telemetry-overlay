@@ -32,7 +32,9 @@ internal sealed class SettingsWindow : Window
         {
             int dark = 1;
             Native.DwmSetWindowAttribute(new System.Windows.Interop.WindowInteropHelper(this).Handle, 20, ref dark, sizeof(int));
+            FitToDisplay();
         };
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(FitToDisplay);
         var root = new DockPanel { Margin = new Thickness(28) }; Content = root;
         var header = new DockPanel { Margin = new Thickness(0, 0, 0, 20) };
         DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
@@ -106,11 +108,23 @@ internal sealed class SettingsWindow : Window
         var monitor = Select(general, "Display", screens.Select((s, i) => $"Display {i + 1}{(s.Primary ? " · primary" : "")}").ToArray(), Math.Max(0, Array.IndexOf(monitors, settings.PinnedMonitor)));
         monitor.IsEnabled = mode.SelectedIndex == 2;
         mode.SelectionChanged += (_, _) => monitor.IsEnabled = mode.SelectedIndex == 2;
+        EventHandler displayChanged = (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            string? selected = monitor.SelectedIndex >= 0 && monitor.SelectedIndex < monitors.Length ? monitors[monitor.SelectedIndex] : settings.PinnedMonitor;
+            screens = Forms.Screen.AllScreens;
+            monitors = screens.Select(s => s.DeviceName).ToArray();
+            monitor.ItemsSource = screens.Select((s, i) => $"Display {i + 1}{(s.Primary ? " · primary" : "")}").ToArray();
+            monitor.SelectedIndex = Math.Max(0, Array.IndexOf(monitors, selected));
+            FitToDisplay();
+        });
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += displayChanged;
+        Closed += (_, _) => Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= displayChanged;
         Section(general, "Startup");
         var startup = Toggle(general, "Launch at Windows sign-in", settings.StartAtSignIn);
         var show = Toggle(general, "Show widget on launch", settings.ShowOnLaunch);
         Section(general, "Shortcuts");
-        var key = Field(general, "Show / hide · Ctrl + Alt +", settings.ToggleKey, "Choose A–Z. E and R are reserved.");
+        var key = Field(general, "Show / hide · Ctrl + Alt +", settings.ToggleKey, "Choose A–Z. E, R and S are reserved.");
+        Readout(general, "Open Controls", "Ctrl + Alt + S");
         Readout(general, "Move / resize", "Ctrl + Alt + E");
         Readout(general, "Record / stop", "Ctrl + Alt + R");
         Readout(general, "Lock after positioning", "Escape");
@@ -204,7 +218,7 @@ internal sealed class SettingsWindow : Window
         var refresh = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         refresh.Tick += (_, _) => { if (tabs.SelectedIndex == 4) status.Text = diagnostics(); };
         refresh.Start(); Closed += (_, _) => refresh.Stop();
-        Details(system, "Permissions and compatibility", "Windows approval enables cross-process FPS for this session. The widget stays unprivileged. GPU sensors use the installed NVIDIA driver; unsupported values remain unavailable. Borderless/windowed games are the intended overlay modes.");
+        Details(system, "Permissions and compatibility", "One Windows approval enables FPS for all applications in this collector session. Switching games needs no further approval. Exiting Telemetry or restarting the collector ends the session. The widget stays unprivileged. GPU sensors use the installed NVIDIA driver; unsupported values remain unavailable. Borderless/windowed games are the intended overlay modes.");
 
         save.Click += (_, _) =>
         {
@@ -231,6 +245,22 @@ internal sealed class SettingsWindow : Window
             { feedback.Foreground = ColorBrush("#FF8787"); feedback.Text = e.Message; }
         };
     }
+    private void FitToDisplay()
+    {
+        var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (handle == 0) return;
+        var area = Forms.Screen.FromHandle(handle).WorkingArea;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        double width = Math.Max(1, area.Width - 16) / dpi.DpiScaleX;
+        double height = Math.Max(1, area.Height - 16) / dpi.DpiScaleY;
+        MinWidth = Math.Min(700, width); MinHeight = Math.Min(620, height);
+        Width = Math.Min(Width, width); Height = Math.Min(Height, height);
+        Native.GetWindowRect(handle, out var bounds);
+        int x = Math.Clamp(bounds.Left, area.Left, Math.Max(area.Left, area.Right - (bounds.Right - bounds.Left)));
+        int y = Math.Clamp(bounds.Top, area.Top, Math.Max(area.Top, area.Bottom - (bounds.Bottom - bounds.Top)));
+        Native.SetWindowPos(handle, 0, x, y, 0, 0, 0x0015);
+    }
+
     private static Brush ColorBrush(string color) => new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
     private static void AddButton(Panel panel, string label, Action action)
     {
