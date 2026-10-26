@@ -78,6 +78,7 @@ internal sealed class AppController : IDisposable
     private readonly DispatcherTimer _timer;
     private readonly HwndSource _hotkeyWindow;
     private CollectorPacket? _packet;
+    private FrameWindow? _frameWindow;
     private CaptureWriter? _capture;
     private SettingsWindow? _settingsWindow;
     private long _lastPacket;
@@ -369,13 +370,14 @@ internal sealed class AppController : IDisposable
                 packet = packet with { Sensors = packet.Sensors with { ProcessCpu = null, ProcessRamGb = null } };
             double nowMs = Stopwatch.GetTimestamp() * 1000.0 / Stopwatch.Frequency;
             var window = FrameWindow.Calculate(frames, nowMs, _targetPid);
+            _frameWindow = window;
             bool stale = packet is null || Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastPacket)).TotalSeconds > 3;
             if (packet is not null && !stale) _status = packet.DroppedFrames > 0 ? $"Capture incomplete: {packet.DroppedFrames} lost events/samples" : packet.FrameStatus;
             if (frames.Length == 32768 && frames[0].TimestampMs >= nowMs - 10_000) _status = "Live window capped: 32,768 samples";
             if (_captureFinishId > 0) _status = "Finishing capture: draining trace buffers…";
             if (selectedExited) _status = "Application exited · choose another";
             _overlay.SetTarget(_manualTarget, _capture is not null);
-            _overlay.Update(packet, window.Statistics, window.Graph, _targetName, _status, _capture is not null, stale);
+            _overlay.Update(packet, window, _targetName, _status, _capture is not null, stale);
             if (_captureFinishId > 0 && Stopwatch.GetElapsedTime(_captureStopStarted).TotalSeconds > 8) StopCapture();
             if (_captureFinishId == 0 && _capture is { } capture && (capture.LimitReached || DateTimeOffset.UtcNow - capture.Started >= TimeSpan.FromHours(1))) RequestCaptureStop();
         }
@@ -438,7 +440,7 @@ internal sealed class AppController : IDisposable
         string Diagnostics()
         {
             var sensors = _packet?.Sensors;
-            return $"CPU  {sensors?.CpuName ?? "Unavailable"}\nGPU  {sensors?.GpuName ?? "Unavailable"}\n\n{sensors?.SensorStatus ?? _status}\n\n{_status}\nCollector: {(_packet?.Elevated == true ? "FPS permission enabled" : "Standard user")}\nDropped trace events: {_packet?.DroppedFrames ?? 0}\n\nCPU package temperature: not available via Windows\nGPU temperature: {sensors?.GpuTemperature?.ToString("0") ?? "—"} °C\nGPU slowdown threshold: {sensors?.GpuThermalLimit?.ToString("0") ?? "—"} °C\nGPU power limit: {sensors?.GpuPowerLimit?.ToString("0") ?? "—"} W\nVRAM reserved by driver: {((sensors?.VramReservedGb * 1024)?.ToString("0") ?? "unavailable (legacy VRAM may include reservation)")} MiB\nSystem committed memory: {sensors?.CommitUsedGb?.ToString("0.0") ?? "—"} / {sensors?.CommitTotalGb?.ToString("0.0") ?? "—"} GiB";
+            return $"CPU  {sensors?.CpuName ?? "Unavailable"}\nGPU  {sensors?.GpuName ?? "Unavailable"}\n\n{sensors?.SensorStatus ?? _status}\n\n{_status}\nCollector: {(_packet?.Elevated == true ? "FPS permission enabled" : "Standard user")}\nDropped trace events: {_packet?.DroppedFrames ?? 0}\n\nTarget: {_targetName} · PID {_targetPid}\nSelection: {(_manualTarget is null ? "Automatic" : "Pinned application")}\nFrame age: {(_frameWindow?.LatestFrameAgeMs / 1000)?.ToString("0.00") ?? "—"} s\nCollector packet age: {Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastPacket)).TotalSeconds:0.00} s\nPresentation surface: {_frameWindow?.SwapChain ?? "—"}\nLive samples: {_frameWindow?.Statistics?.Count ?? 0}\nP99 frame time: {_frameWindow?.Statistics?.P99Ms.ToString("0.00") ?? "—"} ms\n\nCPU package temperature: not available via Windows\nGPU temperature: {sensors?.GpuTemperature?.ToString("0") ?? "—"} °C\nGPU slowdown threshold: {sensors?.GpuThermalLimit?.ToString("0") ?? "—"} °C\nGPU power limit: {sensors?.GpuPowerLimit?.ToString("0") ?? "—"} W\nVRAM reserved by driver: {((sensors?.VramReservedGb * 1024)?.ToString("0") ?? "unavailable (legacy VRAM may include reservation)")} MiB\nSystem committed memory: {sensors?.CommitUsedGb?.ToString("0.0") ?? "—"} / {sensors?.CommitTotalGb?.ToString("0.0") ?? "—"} GiB";
         }
         _settingsWindow = new(_settings, ApplySettings, () => _ = EnableFpsAsync(), Diagnostics, ToggleOverlay, () => { _overlay.ShowPanel(); _overlay.SetEditing(!_overlay.Editing); }, ToggleCapture, () => _manualPid);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;

@@ -10,14 +10,14 @@ Telemetry is a native Windows desktop application written in C# on .NET 10. It u
 
 - System CPU utilization, RAM, commit accounting and target-process CPU/memory.
 - NVIDIA GPU utilization, temperature, power/limit, graphics clock, fan duty, VRAM and supported clock-limit reasons through the installed driver's NVML API.
-- DirectX application present cadence through our own Windows ETW collector, with rolling FPS, 1% low and P99 intervals.
+- DirectX application present cadence through our own Windows ETW collector: rolling FPS, frame time and Low FPS in the widget; P99 and exact statistics in exports.
 - Follow-active-app mode or a free desktop widget with an application picker; drag and edge-resize in edit mode, per-monitor placement and Windows DPI scaling.
 - Global shortcuts, tray controls, optional sign-in launch, editable colors/fonts, row ordering and recording exports.
 - Bounded buffers, explicit unavailable readings and capture-loss reporting.
 
 ## Install
 
-Download `Telemetry-Setup-0.2.0.exe` from [Releases](https://github.com/matt-wigg/telemetry-overlay/releases). It installs per user and includes an uninstaller. A portable ZIP is also available. These initial builds are unsigned; publisher signing is a future distribution milestone.
+Download `Telemetry-Setup-0.3.0.exe` from [Releases](https://github.com/matt-wigg/telemetry-overlay/releases). It installs per user and includes an uninstaller. A portable ZIP is also available. These initial builds are unsigned; publisher signing is a future distribution milestone.
 
 Launch **Telemetry Controls** from Start. The panel also has a tray icon. No extra sensor setup is needed for standard monitoring.
 
@@ -47,6 +47,8 @@ Selections last for the current Telemetry session. An exited process is not sile
 Windows restricts cross-process event tracing. In Controls → Diagnostics, choose **Enable FPS…** and approve the Windows prompt. That one approval covers all applications for the running collector session; switching games does not ask again. Only the collector is elevated; the overlay stays a normal-user process. Exiting Telemetry, restarting its collector or rebooting ends the session. Telemetry does not alter group membership, turn off security features or install a service to avoid this prompt.
 
 FPS is **successful application Present-call cadence**, not display FPS, frame-generated FPS or end-to-end latency. DXGI and Direct3D9 are supported paths. Some Vulkan/OpenGL applications may present through a compatible path; do not assume coverage. This is not a PresentMon replacement with equivalent display-pipeline analysis.
+
+An FPS em dash means **unavailable**, not zero. A replacement presentation surface can take over once it has two intervals and recent data; retired surfaces do not suppress its reading. Genuine pauses or trace-delivery gaps still expire after 2.5 seconds. The caption distinguishes collecting/waiting from no recent frames. Diagnostics shows frame age, collector-packet age and the selected presentation surface.
 
 ## Deliberate capability limits
 

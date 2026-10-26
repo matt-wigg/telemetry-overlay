@@ -174,7 +174,7 @@ internal sealed class SettingsWindow : Window
             });
         metrics.Children.Add(rowActions);
         Section(metrics, "Thresholds");
-        var fps = Field(metrics, "Frame budget · target FPS", settings.TargetFps.ToString(CultureInfo.InvariantCulture));
+        var fps = Field(metrics, "Graph reference · FPS", settings.TargetFps.ToString(CultureInfo.InvariantCulture), "Sets the minimum frame-time graph range. Does not cap game FPS.");
         var gpuWarn = Field(metrics, "GPU warning · °C", N(settings.GpuWarningC));
         var gpuCritical = Field(metrics, "GPU critical · °C", N(settings.GpuCriticalC));
         Details(metrics, "Units and sources", "GPU power is board power. App memory is working set. Memory uses GiB. The graph shows the peak present interval in each 0.5-second bucket. CPU temperature is unavailable without a supported driver; this app installs none.");
@@ -195,7 +195,7 @@ internal sealed class SettingsWindow : Window
         Readout(capturePage, "Shortcut", "Ctrl + Alt + R");
         Readout(capturePage, "Output", "CSV + JSON");
         Readout(capturePage, "Limits", "60 min / 1 million intervals");
-        Details(capturePage, "Measurement definitions", "APP FPS measures successful application Present-call cadence. It is not displayed/generated FPS or latency. Disable frame generation for comparisons to a game's base rendering rate. Live statistics use 10 seconds. 1% low is 1000 / mean of the slowest 1% of intervals; P99 uses nearest rank.");
+        Details(capturePage, "Measurement definitions", "FPS is the application's successful Present-call rate, averaged over 10 seconds. Frame time is the mean interval in milliseconds. Low FPS is the 1% low: 1000 divided by the mean slowest 1% of intervals. The background graph shows peak frame times in half-second buckets over 30 seconds; taller spikes mean slower frames. These are not displayed/generated FPS or input latency. P99 and exact statistics remain in capture exports. An em dash means unavailable, not zero.");
         Details(capturePage, "Capture completeness", "The process stays fixed while recording. Stopping drains buffered frames. Check summary.json for completeness, loss and sample count. Raw captures contain process identifiers and measurements; inspect them before sharing.");
 
         var system = Page("Diagnostics");

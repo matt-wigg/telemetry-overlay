@@ -13,11 +13,12 @@
 | Fan | NVML fan duty percentage, not RPM. Zero can be normal with fan-stop. |
 | VRAM | NVML v2 device memory used/total, GiB; driver-reserved memory is separate in diagnostics/CSV. Legacy v1 fallback may include reservation in used memory. Not application working set. |
 | FPS | 1000 / arithmetic mean of successful Present-start intervals in milliseconds. |
-| 1% low | 1000 / mean of slowest ceil(N×0.01) intervals. Tools using a percentile have a different definition. |
-| P99 | Nearest-rank 99th percentile interval in milliseconds. |
-| Graph | Peak interval in each 0.5-second update, on a fixed 30-second axis; reference line is 1000 / target FPS. Missing intervals produce gaps. |
+| Frame time | Mean successful Present-start interval in milliseconds. |
+| Low FPS | The 1% low: 1000 / mean of slowest ceil(N×0.01) intervals. Tools using a percentile have a different definition. |
+| P99 | Nearest-rank 99th percentile interval in milliseconds; available in Diagnostics and exports. |
+| Background graph | Peak frame-time interval in each 0.5-second bucket, on a fixed 30-second axis. Taller spikes mean slower frames. The configured graph-reference FPS sets its minimum vertical range; missing intervals produce gaps. |
 
-Live statistics use the last 10 seconds and one dominant swap chain. At least two valid samples are required; stale frame data becomes unavailable. Low-percentile values on short samples are statistically weak; the sample count is shown.
+Live statistics use the last 10 seconds and one dominant, recently active swap chain. At least two valid intervals are required. Retired surfaces cannot suppress a fresh replacement's FPS; after 2.5 seconds without recent intervals the reading becomes unavailable. An em dash is not zero FPS. FPS and Low FPS are rounded to whole numbers in the widget; exact values remain in exports. Low-percentile values on short samples are statistically weak; Diagnostics and exports include sample counts.
 
 ## Status colors
 

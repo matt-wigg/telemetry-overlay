@@ -5,6 +5,39 @@ namespace Telemetry.Core.Tests;
 public class DeliveryTests
 {
     [Fact]
+    public void RetiredDominantChainDoesNotHideItsLiveReplacement()
+    {
+        var old = Enumerable.Range(0, 100).Select(i => new FrameSample(42, "old", 6000 + i * 10, 10, null, null, "test"));
+        FrameSample[] replacement = [new(42, "new", 9800, 20, null, null, "test"), new(42, "new", 9900, 20, null, null, "test")];
+        var window = FrameWindow.Calculate(old.Concat(replacement), 10000, 42);
+        Assert.Equal("new", window.SwapChain);
+        Assert.Equal(50, window.Statistics!.Fps);
+        Assert.Equal(2, window.Statistics.Count);
+        Assert.Equal(100, window.LatestFrameAgeMs);
+        Assert.DoesNotContain(10, window.Graph); // Never mix the two presentation surfaces.
+    }
+
+    [Fact]
+    public void LiveReplacementNeedsTwoIntervalsAndExpiresWhenItStops()
+    {
+        FrameSample[] samples = [new(42, "old", 6000, 10, null, null, "test"), new(42, "old", 6100, 10, null, null, "test"),
+            new(42, "new", 9900, 20, null, null, "test")];
+        Assert.Null(FrameWindow.Calculate(samples, 10000, 42).Statistics);
+        var complete = samples.Append(new FrameSample(42, "new", 10000, 20, null, null, "test")).ToArray();
+        Assert.NotNull(FrameWindow.Calculate(complete, 12499, 42).Statistics);
+        Assert.Null(FrameWindow.Calculate(complete, 12500, 42).Statistics);
+    }
+
+    [Fact]
+    public void EqualActiveChainsHaveStableSelectionRegardlessOfDeliveryOrder()
+    {
+        FrameSample[] samples = [new(42, "B", 9900, 20, null, null, "test"), new(42, "A", 9900, 10, null, null, "test"),
+            new(42, "B", 9950, 20, null, null, "test"), new(42, "A", 9950, 10, null, null, "test")];
+        Assert.Equal("A", FrameWindow.Calculate(samples, 10000, 42).SwapChain);
+        Assert.Equal("A", FrameWindow.Calculate(samples.Reverse(), 10000, 42).SwapChain);
+    }
+
+    [Fact]
     public void LateDeliveryFillsHistoricalBucketsAndStaleStatisticsExpire()
     {
         FrameSample F(int pid, double time, double duration) => new(pid, "A", time, duration, null, null, "test");

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 — in development
+## 0.3.0 — 2026-10-26
 
 - Separate the measurement widget from Controls; simplify its header, spacing and status footer.
 - Organize Controls into five focused pages with collapsed help and refreshable application selection.
@@ -15,9 +15,10 @@
 - Track selected process identity across focus changes; reject reused process IDs and mark recordings incomplete when the target exits.
 - Align app names and process IDs in the picker, truncate long header names and preserve template bindings for settings dropdowns.
 - Let the open app picker receive mouse input while placement is unlocked; do not intercept its item clicks as native dragging.
+- Prefer a recently presenting surface over a retired surface with more historical samples; stabilize equal-count selection and explain unavailable FPS with live freshness diagnostics.
 - Move unlocked widgets directly without triggering Windows Aero Snap at monitor boundaries; remember the destination display in free mode.
 - Share captures-folder opening between Settings and the tray, with recoverable filesystem/shell error feedback.
-- Live game interaction validation remains a release gate.
+- Rebuild the FPS section around a single headline, clear Frame time / Low FPS labels, and a tall subdued history graph behind the readout. Validate live, waiting and stale layouts offscreen at narrow and enlarged sizes.
 
 ## 0.2.0 — correctness and security review
 

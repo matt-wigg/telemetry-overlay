@@ -129,14 +129,24 @@ internal sealed class OverlayWindow : Window
         }
         finally { _targetPicker.IsDropDownOpen = false; SetEditing(false); }
     }
-    private void LayoutPicker()
+    private void LayoutPicker(double? previewWidth = null)
     {
         double scale = RenderScale;
         _targetPicker.Visibility = _settings.MonitorMode == "Pinned" ? Visibility.Visible : Visibility.Collapsed;
         _targetPicker.Margin = new Thickness(8 * scale, 1 * scale, 0, 0);
-        _targetPicker.Width = Math.Max(150, ActualWidth / scale - 110);
+        _targetPicker.Width = Math.Max(150, (previewWidth ?? ActualWidth) / scale - 110);
         _targetPicker.Height = 31;
         _targetPicker.LayoutTransform = new ScaleTransform(scale, scale);
+    }
+    // The same content can be laid out for regression images without opening a desktop window.
+    internal FrameworkElement PreparePreview(double width, double height)
+    {
+        LayoutPicker(width);
+        var surface = (FrameworkElement)Content;
+        surface.Measure(new Size(width, height));
+        surface.Arrange(new Rect(0, 0, width, height));
+        surface.UpdateLayout();
+        return surface;
     }
 
     internal void SetEditing(bool enabled)
@@ -292,9 +302,14 @@ internal sealed class OverlayWindow : Window
         _settings.Placements[screen.DeviceName] = new(Math.Clamp(x, 0, maxX), Math.Clamp(y, 0, maxY));
         Native.SetWindowPos(_handle, new nint(-1), b.Left + Math.Clamp(x, 0, maxX), b.Top + Math.Clamp(y, 0, maxY), 0, 0, 0x0010 | 0x0001);
     }
-    internal void Update(CollectorPacket? packet, FrameStatistics? statistics, double[] graph, string target, string status, bool recording, bool stale)
+    internal void Update(CollectorPacket? packet, FrameWindow window, string target, string status, bool recording, bool stale)
     {
-        _canvas.Packet = packet; _canvas.Statistics = statistics; _canvas.Graph = graph;
+        _canvas.Packet = packet; _canvas.Statistics = window.Statistics; _canvas.Graph = window.Graph;
+        _canvas.FpsNote = stale ? "Collector delayed" : window.Statistics is not null ? "10 s average"
+            : status.StartsWith("FPS permission required", StringComparison.Ordinal) ? "Enable FPS"
+            : status.StartsWith("Application exited", StringComparison.Ordinal) ? "App exited"
+            : window.LatestFrameAgeMs >= FrameWindow.FreshnessLimitMs ? "No recent frames"
+            : window.LatestFrameAgeMs is not null ? "Collecting frames" : "Waiting for frames";
         _canvas.Target = target; _canvas.Status = status; _canvas.Recording = recording; _canvas.Stale = stale;
         if (_selectedTarget is null && !_targetPicker.IsDropDownOpen && _automaticLabel != target + " · auto")
         {
@@ -322,6 +337,7 @@ internal sealed class HudCanvas : FrameworkElement
     internal double[] Graph { get; set; } = [];
     internal string Target { get; set; } = "Desktop";
     internal string Status { get; set; } = "Starting collector";
+    internal string FpsNote { get; set; } = "Waiting for frames";
     internal string MonitorLabel { get; set; } = "DISPLAY 01";
     internal bool Editing { get; set; }
     internal bool Recording { get; set; }
@@ -355,6 +371,44 @@ internal sealed class HudCanvas : FrameworkElement
     }
     private Brush Tone(string key) => _severities.GetValueOrDefault(key) switch { Severity.Busy => _accent, Severity.Warning => _warning, Severity.Critical => _critical, Severity.Unavailable => _muted, _ => _foreground };
 
+    private void DrawFrameHistory(DrawingContext dc, Rect bounds)
+    {
+        if (Stale || Graph.Length < 2) return;
+        double ceiling = Math.Max(1000.0 / _settings.TargetFps * 2, Graph.Where(double.IsFinite).DefaultIfEmpty(1).Max() * 1.15);
+        var line = new StreamGeometry();
+        var area = new StreamGeometry();
+        using (var stroke = line.Open())
+        using (var fill = area.Open())
+        {
+            bool connected = false;
+            double lastX = bounds.Left;
+            for (int i = 0; i < Graph.Length; i++)
+            {
+                if (!double.IsFinite(Graph[i]))
+                {
+                    if (connected) fill.LineTo(new Point(lastX, bounds.Bottom), true, false);
+                    connected = false; continue;
+                }
+                double x = bounds.Left + (60 - Graph.Length + i) * bounds.Width / 59;
+                var point = new Point(x, bounds.Bottom - Math.Clamp(Graph[i] / ceiling, 0, 1) * bounds.Height);
+                if (!connected)
+                {
+                    stroke.BeginFigure(point, false, false);
+                    fill.BeginFigure(new Point(x, bounds.Bottom), true, true);
+                }
+                else stroke.LineTo(point, true, false);
+                fill.LineTo(point, true, false);
+                connected = true; lastX = x;
+            }
+            if (connected) fill.LineTo(new Point(lastX, bounds.Bottom), true, false);
+        }
+        line.Freeze(); area.Freeze();
+        dc.PushClip(new RectangleGeometry(bounds));
+        dc.PushOpacity(.055); dc.DrawGeometry(_accent, null, area); dc.Pop();
+        dc.PushOpacity(.28); dc.DrawGeometry(null, new Pen(_accent, 1.2), line); dc.Pop();
+        dc.Pop();
+    }
+
     protected override void OnRender(DrawingContext dc)
     {
         base.OnRender(dc);
@@ -373,36 +427,18 @@ internal sealed class HudCanvas : FrameworkElement
         Text(Recording ? "[REC]" : MonitorLabel, rightEdge, 11, 10, Recording ? _critical : _accent, right: true);
         dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(0, 33), new Point(width, 33));
         var stats = Stale ? null : Statistics;
-        Text(Number(stats?.Fps, "0.0"), 16, 54, 38);
-        Text("APP FPS", rightEdge, 62, 11, _muted, right: true);
-        Text("10 s average", rightEdge, 81, 10, _muted, right: true);
-        Text("1% low  " + Number(stats?.OnePercentLow, "0.0"), 18, 111, 11, _muted);
-        Text("Avg " + Number(stats?.MeanMs, "0.00") + " ms", rightEdge, 111, 11, _muted, right: true);
-        double graphTop = 139, graphBottom = 185;
-        dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(18, graphBottom), new Point(rightEdge, graphBottom));
-        if (Graph.Length > 1 && !Stale)
-        {
-            double ceiling = Math.Max(1000.0 / _settings.TargetFps * 2, Graph.Where(double.IsFinite).DefaultIfEmpty(1).Max() * 1.15);
-            var geometry = new StreamGeometry();
-            using (var context = geometry.Open())
-            {
-                bool connected = false;
-                for (int i = 0; i < Graph.Length; i++)
-                {
-                    if (!double.IsFinite(Graph[i])) { connected = false; continue; }
-                    var p = new Point(18 + (60 - Graph.Length + i) * (width - 36) / 59, graphBottom - Math.Clamp(Graph[i] / ceiling, 0, 1) * (graphBottom - graphTop));
-                    if (!connected) context.BeginFigure(p, false, false); else context.LineTo(p, true, false);
-                    connected = true;
-                }
-            }
-            geometry.Freeze(); dc.DrawGeometry(null, new Pen(_accent, 1.3), geometry);
-            double budgetY = graphBottom - (1000.0 / _settings.TargetFps / ceiling) * (graphBottom - graphTop);
-            dc.DrawLine(new Pen(_muted, .4), new Point(18, budgetY), new Point(rightEdge, budgetY));
-        }
-        Text("FRAME TIME / 30 s", 18, 194, 10, _muted);
-        Text((1000.0 / _settings.TargetFps).ToString("0.00", CultureInfo.InvariantCulture) + " ms budget", rightEdge, 194, 10, _muted, right: true);
-        Text("P99 " + Number(stats?.P99Ms, "0.00") + " ms", 18, 216, 11, _muted);
-        Text((stats?.Count.ToString(CultureInfo.InvariantCulture) ?? "0") + " samples", rightEdge, 216, 10, _muted, right: true);
+        DrawFrameHistory(dc, new Rect(1, 34, width - 2, 204));
+        Text("FPS", 18, 49, 11, _muted);
+        if (stats is null) Text(FpsNote, rightEdge, 49, 10, _muted, 132, right: true);
+        Text(Number(stats?.Fps), 16, 66, 52, _foreground, width - 34);
+        double columnWidth = (width - 52) / 2;
+        double secondColumn = 34 + columnWidth;
+        Text("Frame time", 18, 159, 11, _muted, columnWidth);
+        Text("Low FPS", secondColumn, 159, 11, _muted, columnWidth);
+        Text(stats is null ? "—" : Number(stats.MeanMs, "0.00") + " ms", 18, 179, 18, _foreground, columnWidth);
+        Text(Number(stats?.OnePercentLow), secondColumn, 179, 18, _foreground, columnWidth);
+        Text("Frame-time history", 18, 219, 9, _muted, width - 90);
+        Text("30 s", rightEdge, 219, 9, _muted, 40, right: true);
         dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(18, 239), new Point(rightEdge, 239));
         var s = Stale ? null : Packet?.Sensors;
         double y = 251;
@@ -419,16 +455,15 @@ internal sealed class HudCanvas : FrameworkElement
                 "RAM" => (Number(s?.RamUsedGb, "0.0"), "/ " + Number(s?.RamTotalGb, "0.#") + " GiB"),
                 "COMMIT" => (Number(s?.CommitUsedGb, "0.0"), "/ " + Number(s?.CommitTotalGb, "0.#") + " GiB"),
                 "POWER" => (Number(s?.GpuPower) + " W", "/ " + Number(s?.GpuPowerLimit) + " W"),
-                "CLOCK" => (Number(s?.GpuClock) + " MHz", "GPU"),
-                "FAN" => (Number(s?.GpuFan) + "%", "speed"),
+                "CLOCK" => (Number(s?.GpuClock) + " MHz", ""),
+                "FAN" => (Number(s?.GpuFan) + "%", ""),
                 "PROCESS" => (Number(s?.ProcessCpu, "0.0") + "%", Number(s?.ProcessRamGb, "0.0") + " GiB"),
                 _ => ("—", "")
             };
-            var label = id switch { "GPU" => "GPU utilization", "CPU" => "CPU utilization", "VRAM" => "Video memory", "RAM" => "System memory", "POWER" => "GPU power", "CLOCK" => "Graphics clock", "FAN" => "GPU fan", "PROCESS" => "App CPU / RAM", "COMMIT" => "Committed memory", _ => id };
-            if (width < 340) label = id switch
+            var label = id switch
             {
                 "GPU" => "GPU usage", "CPU" => "CPU usage", "VRAM" => "Video RAM", "RAM" => "System RAM",
-                "CLOCK" => "GPU clock", "PROCESS" => "App CPU/RAM", "COMMIT" => "Commit", _ => label
+                "POWER" => "GPU power", "FAN" => "GPU fan", "CLOCK" => "GPU clock", "PROCESS" => "App CPU/RAM", "COMMIT" => "Committed", _ => id
             };
             Text(label, 18, y, 11, _muted, width - 218);
             Text(primary, rightEdge - 88, y - 1, 13, Tone(id), 90, true);
