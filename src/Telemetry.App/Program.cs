@@ -35,6 +35,9 @@ internal static class Program
                 using var sensor = new SensorProvider(); Thread.Sleep(1000);
                 Console.WriteLine(JsonSerializer.Serialize(sensor.Read())); return 0;
             }
+            // Small instrumentation windows must remain visible in remote/captured desktops,
+            // including systems where the WPF hardware surface is not composed correctly.
+            System.Windows.Media.RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
             using var activation = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\TelemetryControls-7B9F1ED2");
             using var mutex = new Mutex(true, @"Local\TelemetryOverlay-7B9F1ED2", out bool first);
             if (!first) { if (!args.Contains("--startup")) activation.Set(); return 0; }

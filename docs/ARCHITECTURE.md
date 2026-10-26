@@ -1,5 +1,7 @@
 # Architecture
 
+The small WPF UI uses software rendering to remain visible on captured/remote desktops where hardware composition may yield a blank Controls surface. This also avoids submitting the UI's rendering work to the GPU under test; CPU/compositor overhead still requires profiling.
+
 ## Technology decisions
 
 | Concern | Choice | Reason |

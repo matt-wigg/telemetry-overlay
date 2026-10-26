@@ -277,6 +277,11 @@ internal sealed class HudCanvas : FrameworkElement
                 _ => ("—", "")
             };
             var label = id switch { "GPU" => "GPU utilization", "CPU" => "CPU utilization", "VRAM" => "Video memory", "RAM" => "System memory", "POWER" => "GPU power", "CLOCK" => "Graphics clock", "FAN" => "GPU fan", "PROCESS" => "App CPU / RAM", "COMMIT" => "Committed memory", _ => id };
+            if (width < 340) label = id switch
+            {
+                "GPU" => "GPU usage", "CPU" => "CPU usage", "VRAM" => "Video RAM", "RAM" => "System RAM",
+                "CLOCK" => "GPU clock", "PROCESS" => "App CPU/RAM", "COMMIT" => "Commit", _ => label
+            };
             Text(label, 18, y, 11, _muted, width - 218);
             Text(primary, rightEdge - 88, y - 1, 13, Tone(id), 90, true);
             Text(secondary, rightEdge, y, 11, id == "GPU" ? Tone(id + "temp") : _muted, 82, true);

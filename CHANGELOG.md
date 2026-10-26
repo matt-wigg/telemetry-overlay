@@ -7,6 +7,7 @@
 - Bound IPC lines while reading, authenticate collector process identities and prevent elevated-client impersonation.
 - Preserve invalid settings during recovery, roll back startup changes on failed saves and keep resized panel dimensions.
 - Improve monitor labels, row selection, minimum-height validation, metric-column spacing and dropdown contrast.
+- Correct blank Controls rendering on captured desktops and use shorter labels at narrow panel widths.
 - Establish clean public source history, pinned CI/security workflows and documented repository controls.
 
 ## 0.1.1 — launch visibility fix

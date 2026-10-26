@@ -7,9 +7,12 @@ Version 0.2 is a preview, not universal hardware/game certification. Raw evidenc
 - Release compilation treats warnings as errors. The regression suite has 31 passing tests covering interval statistics, Present pairing, invalid samples, bounded IPC, delayed graph delivery, configuration validation, recording boundaries, capture loss and Windows x64 ETW structure layouts.
 - Native smoke checks verify HWND visibility, show/hide, edit-mode input, resizing, remembered placement, click-through/no-activate styles, tray visibility and registration of all three shortcuts.
 - Application-rendered Controls and overlay images were inspected for typography, spacing and alignment. Metric columns now have disjoint width limits at the minimum panel size. The settings dropdown indicator has explicit dark-theme contrast.
+- A desktop capture exposed a blank hardware-rendered Controls surface despite working input. Software rendering corrected it in the same session. Compact metric labels remain readable at the minimum width. Actual Ctrl+Alt+O and Ctrl+Alt+E input was verified in the desktop session.
+- The 2026-10-26 D3D11 retest captured and matched all 263 intervals from 264 successful test Presents. Final trace drain was acknowledged, with zero reported loss; mean absolute interval difference was 0.00195 ms and maximum 0.17270 ms. This timer-paced workload verifies measurement behavior, not game performance.
 - Recording completion requires an acknowledged ETW buffer drain, at least two usable intervals on the primary swap chain, and no reported event/sample loss or capacity limit. A forced shutdown or failed drain produces an incomplete summary.
 - NVIDIA memory accounting uses the versioned driver API to separate reserved memory. Windows RAM totals were compared with OS reporting. Dynamic readings are sequential samples, not simultaneous observations.
 - Earlier local installer checks confirmed per-user installation, executable hash agreement, startup registration and uninstall preservation of settings. Repeat these for each changed installer.
+- The 0.2 package installation preserved settings; all 485 installed payload files matched the portable package. GitHub's Windows build/test workflow and CodeQL analysis passed, with no open CodeQL or secret-scanning alerts at review time. Dependency review also ran successfully on update pull requests.
 
 ## Repeatable checks
 
