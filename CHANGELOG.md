@@ -14,6 +14,7 @@
 - Add free placement with a compact header app picker, optional background-process listing and a separate follow-active-app corner mode.
 - Track selected process identity across focus changes; reject reused process IDs and mark recordings incomplete when the target exits.
 - Align app names and process IDs in the picker, truncate long header names and preserve template bindings for settings dropdowns.
+- Let the open app picker receive mouse input while placement is unlocked; do not intercept its item clicks as native dragging.
 - Move unlocked widgets directly without triggering Windows Aero Snap at monitor boundaries; remember the destination display in free mode.
 - Share captures-folder opening between Settings and the tray, with recoverable filesystem/shell error feedback.
 - Live game interaction validation remains a release gate.

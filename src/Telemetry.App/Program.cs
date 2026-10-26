@@ -240,12 +240,13 @@ internal sealed class AppController : IDisposable
         _overlay.SetTarget(new ProcessChoice(42, longName, 0), false);
         await Task.Delay(100);
         bool captionValid = _overlay.VerifyPickerCaption(longName);
+        bool popupReceivesInput = _overlay.VerifyPickerInputRouting();
         var pickerRender = new System.Windows.Media.Imaging.RenderTargetBitmap((int)_overlay.ActualWidth, (int)_overlay.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
         pickerRender.Render(_overlay);
         var pickerEncoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
         pickerEncoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(pickerRender));
         using (var file = File.Create(Path.Combine(output, "overlay-free.png"))) pickerEncoder.Save(file);
-        File.WriteAllText(Path.Combine(output, "picker.json"), JsonSerializer.Serialize(new { captionValid }));
+        File.WriteAllText(Path.Combine(output, "picker.json"), JsonSerializer.Serialize(new { captionValid, popupReceivesInput }));
         _application.Shutdown();
     }
 

@@ -114,6 +114,21 @@ internal sealed class OverlayWindow : Window
         }
         return HasCaption(_targetPicker);
     }
+    internal bool VerifyPickerInputRouting()
+    {
+        SetEditing(true);
+        _targetPicker.IsDropDownOpen = true;
+        try
+        {
+            bool pressHandled = false, hitHandled = false;
+            ResizeHook(_handle, 0x0201, 0, (nint)((200 << 16) | 100), ref pressHandled);
+            Native.GetWindowRect(_handle, out var bounds);
+            long corner = ((long)(ushort)bounds.Top << 16) | (ushort)bounds.Left;
+            ResizeHook(_handle, 0x0084, 0, (nint)corner, ref hitHandled);
+            return !pressHandled && !hitHandled && !_dragging;
+        }
+        finally { _targetPicker.IsDropDownOpen = false; SetEditing(false); }
+    }
     private void LayoutPicker()
     {
         double scale = RenderScale;
@@ -158,7 +173,9 @@ internal sealed class OverlayWindow : Window
         // Use the press message's coordinates, not a later live cursor position: queued
         // input can already have moved by the time the UI thread handles the press.
         // Avoid Windows' move loop, which Aero Snaps widgets at display boundaries.
-        if (message == 0x0201 && Editing)
+        // WPF captures mouse input to the owner while its ComboBox popup is open.
+        // Leave those messages to WPF so clicking a list item cannot start a drag.
+        if (message == 0x0201 && Editing && !_targetPicker.IsDropDownOpen)
         {
             // The free-placement header is an interactive selector, not a drag handle.
             double clientY = (short)((lParam.ToInt64() >> 16) & 0xffff) / VisualTreeHelper.GetDpi(this).DpiScaleY;
@@ -180,7 +197,7 @@ internal sealed class OverlayWindow : Window
         }
         if (_dragging && message is 0x0215 or 0x001F) FinishDrag();
         if (message == 0x0232 && Editing) { SavePosition(); Moved?.Invoke(); }
-        if (message != 0x0084 || !Editing) return 0;
+        if (message != 0x0084 || !Editing || _targetPicker.IsDropDownOpen) return 0;
         Native.GetWindowRect(hWnd, out var r);
         int x = (short)(lParam.ToInt64() & 0xffff), y = (short)((lParam.ToInt64() >> 16) & 0xffff);
         int edge = (int)(9 * VisualTreeHelper.GetDpi(this).DpiScaleX);
