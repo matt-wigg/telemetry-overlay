@@ -101,7 +101,7 @@ internal sealed class AppController : IDisposable
     private readonly uint _taskbarCreated;
     private int _toggleHotkeyId = 1;
     private string? _registeredToggle;
-    private bool _editHotkeyRegistered, _captureHotkeyRegistered, _settingsHotkeyRegistered;
+    private bool _captureHotkeyRegistered, _settingsHotkeyRegistered;
 
     internal AppController(Application application, bool testing = false)
     {
@@ -154,13 +154,12 @@ internal sealed class AppController : IDisposable
         await Task.Delay(500);
         ToggleOverlay(); bool hideWorks = !_overlay.NativeVisible;
         ToggleOverlay(); bool showWorks = _overlay.NativeVisible;
-        _overlay.SetEditing(true);
-        var editStyle = Native.GetWindowLongPtr(new WindowInteropHelper(_overlay).Handle, Native.GwlExStyle).ToInt64();
-        bool editReceivesInput = (editStyle & (Native.WsExTransparent | Native.WsExNoActivate)) == 0;
+        var inputStyle = Native.GetWindowLongPtr(new WindowInteropHelper(_overlay).Handle, Native.GwlExStyle).ToInt64();
+        bool dragReceivesInput = (inputStyle & Native.WsExTransparent) == 0;
         _overlay.Width = 400 * _overlay.RenderScale; _overlay.Height = 620 * _overlay.RenderScale;
         await Task.Delay(100);
         bool resizeWorks = Math.Abs(_settings.PanelWidth - 400) < 1 && Math.Abs(_settings.PanelHeight - 620) < 1;
-        _overlay.SetEditing(false);
+        _overlay.SavePosition();
         bool positionRemembered = _settings.Placements.ContainsKey(_overlay.CurrentMonitor);
         var displayChecks = new List<object>();
         foreach (var screen in Forms.Screen.AllScreens)
@@ -170,11 +169,10 @@ internal sealed class AppController : IDisposable
             await Task.Delay(250);
             var overlayHandle = new WindowInteropHelper(_overlay).Handle;
             Native.GetWindowRect(overlayHandle, out var before);
-            _overlay.SetEditing(true);
             Native.SetWindowPos(overlayHandle, new nint(-1), screen.WorkingArea.Left + 60, screen.WorkingArea.Top + 80, 0, 0, 0x0011);
             _overlay.Width = 380 * _overlay.RenderScale; _overlay.Height = 600 * _overlay.RenderScale;
             await Task.Delay(100);
-            _overlay.SetEditing(false);
+            _overlay.SavePosition();
             Native.GetWindowRect(overlayHandle, out var saved);
             _overlay.Hide(); _overlay.ShowPanel();
             await Task.Delay(100);
@@ -190,6 +188,7 @@ internal sealed class AppController : IDisposable
                 displayRemembered = _overlay.CurrentMonitor == screen.DeviceName
             });
         }
+        bool permanentDragWorks = _overlay.VerifyDragInputRouting();
         _settings.MonitorMode = "Foreground";
         _settings.PanelWidth = 360; _settings.PanelHeight = 554; _overlay.RefreshTheme();
         await Task.Delay(100);
@@ -213,14 +212,14 @@ internal sealed class AppController : IDisposable
             controlsVisible = Native.IsWindowVisible(new WindowInteropHelper(_settingsWindow!).Handle),
             hideWorks,
             showWorks,
-            editReceivesInput,
+            dragReceivesInput,
+            permanentDragWorks,
             resizeWorks,
             positionRemembered,
             toggleHotkeyRegistered = _registeredToggle is not null,
-            editHotkeyRegistered = _editHotkeyRegistered,
             captureHotkeyRegistered = _captureHotkeyRegistered,
             settingsHotkeyRegistered = _settingsHotkeyRegistered,
-            clickThrough = (styles & Native.WsExTransparent) != 0,
+            dragHandleReachable = (styles & Native.WsExTransparent) == 0,
             noActivate = (styles & Native.WsExNoActivate) != 0,
             monitorCount = Forms.Screen.AllScreens.Length,
             displayChecks,
@@ -263,7 +262,6 @@ internal sealed class AppController : IDisposable
         var menu = new Forms.ContextMenuStrip { BackColor = Color.FromArgb(28, 28, 28), ForeColor = Color.FromArgb(230, 230, 230), ShowImageMargin = false };
         void Item(string text, Action action) => menu.Items.Add(text, null, (_, _) => _application.Dispatcher.Invoke(action));
         Item("Show / hide overlay     Ctrl+Alt+" + _settings.ToggleKey, ToggleOverlay);
-        Item("Edit / lock placement    Ctrl+Alt+E", () => { _overlay.ShowPanel(); _overlay.SetEditing(!_overlay.Editing); });
         Item("Start / stop capture      Ctrl+Alt+R", ToggleCapture);
         menu.Items.Add(new Forms.ToolStripSeparator());
         Item("Settings…                    Ctrl+Alt+S", ShowSettings);
@@ -279,10 +277,9 @@ internal sealed class AppController : IDisposable
     private void RegisterHotkeys(string key)
     {
         bool toggle = TryRegisterToggle(key);
-        _editHotkeyRegistered = Native.RegisterHotKey(_hotkeyWindow.Handle, 2, 0x4003, 'E');
         _captureHotkeyRegistered = Native.RegisterHotKey(_hotkeyWindow.Handle, 3, 0x4003, 'R');
         _settingsHotkeyRegistered = Native.RegisterHotKey(_hotkeyWindow.Handle, 5, 0x4003, 'S');
-        if (!toggle || !_editHotkeyRegistered || !_captureHotkeyRegistered || !_settingsHotkeyRegistered) Notify("A Telemetry hotkey is already in use. Tray controls remain available; change the toggle key in Settings.");
+        if (!toggle || !_captureHotkeyRegistered || !_settingsHotkeyRegistered) Notify("A Telemetry hotkey is already in use. Tray controls remain available; change the toggle key in Settings.");
     }
     private bool TryRegisterToggle(string key)
     {
@@ -296,7 +293,7 @@ internal sealed class AppController : IDisposable
     {
         if (message == Native.WmHotkey)
         {
-            switch (wParam.ToInt32()) { case 1: case 4: ToggleOverlay(); break; case 2: _overlay.ShowPanel(); _overlay.SetEditing(!_overlay.Editing); break; case 3: ToggleCapture(); break; case 5: ShowSettings(); break; }
+            switch (wParam.ToInt32()) { case 1: case 4: ToggleOverlay(); break; case 3: ToggleCapture(); break; case 5: ShowSettings(); break; }
             handled = true;
         }
         if ((uint)message == _taskbarCreated) { _tray.Visible = false; _tray.Visible = true; }
@@ -449,7 +446,7 @@ internal sealed class AppController : IDisposable
             var sensors = _packet?.Sensors;
             return $"CPU  {sensors?.CpuName ?? "Unavailable"}\nGPU  {sensors?.GpuName ?? "Unavailable"}\n\n{sensors?.SensorStatus ?? _status}\n\n{_status}\nCollector: {(_packet?.Elevated == true ? "FPS permission enabled" : "Standard user")}\nDropped trace events: {_packet?.DroppedFrames ?? 0}\n\nTarget: {_targetName} · PID {_targetPid}\nSelection: {(_manualTarget is null ? "Automatic" : "Pinned application")}\nFrame age: {(_frameWindow?.LatestFrameAgeMs / 1000)?.ToString("0.00") ?? "—"} s\nCollector packet age: {Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastPacket)).TotalSeconds:0.00} s\nPresentation surface: {_frameWindow?.SwapChain ?? "—"}\nLive samples: {_frameWindow?.Statistics?.Count ?? 0}\nP99 frame time: {_frameWindow?.Statistics?.P99Ms.ToString("0.00") ?? "—"} ms\n\nCPU package temperature: not available via Windows\nGPU temperature: {sensors?.GpuTemperature?.ToString("0") ?? "—"} °C\nGPU slowdown threshold: {sensors?.GpuThermalLimit?.ToString("0") ?? "—"} °C\nGPU power limit: {sensors?.GpuPowerLimit?.ToString("0") ?? "—"} W\nVRAM reserved by driver: {((sensors?.VramReservedGb * 1024)?.ToString("0") ?? "unavailable (legacy VRAM may include reservation)")} MiB\nSystem committed memory: {sensors?.CommitUsedGb?.ToString("0.0") ?? "—"} / {sensors?.CommitTotalGb?.ToString("0.0") ?? "—"} GiB";
         }
-        _settingsWindow = new(_settings, ApplySettings, () => _ = EnableFpsAsync(), Diagnostics, ToggleOverlay, () => { _overlay.ShowPanel(); _overlay.SetEditing(!_overlay.Editing); }, ToggleCapture, () => _manualPid);
+        _settingsWindow = new(_settings, ApplySettings, () => _ = EnableFpsAsync(), Diagnostics, ToggleOverlay, ToggleCapture, () => _manualPid);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.ShowControls();
     }
@@ -460,7 +457,7 @@ internal sealed class AppController : IDisposable
             throw new InvalidOperationException("Stop the recording before changing the application or mode.");
         var selection = manualPid == _manualPid ? _manualTarget : manualPid > 0 ? ProcessChoice.Read(manualPid) : null;
         if (manualPid > 0 && selection is null) throw new InvalidOperationException("That application exited or cannot be inspected. Refresh the list.");
-        if (candidate.ToggleKey is "E" or "R" or "S") throw new InvalidOperationException("E, R and S are reserved for placement, recording and settings.");
+        if (candidate.ToggleKey is "R" or "S") throw new InvalidOperationException("R and S are reserved for recording and settings.");
         if (!TryRegisterToggle(candidate.ToggleKey)) throw new InvalidOperationException("That shortcut is in use. Your existing shortcut is still active.");
         string? priorStartup = SettingsStore.GetStartupCommand();
         try { SettingsStore.SetStartup(candidate.StartAtSignIn); SettingsStore.Save(candidate, allowRecovery: true); }

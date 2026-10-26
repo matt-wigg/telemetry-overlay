@@ -4,6 +4,9 @@ namespace Telemetry.Core.Tests;
 
 public class PanelLayoutTests
 {
+    [Fact]
+    public void FormerPlacementShortcutCanBeUsedForVisibility() => new AppSettings { ToggleKey = "E" }.Validate();
+
     [Theory]
     [InlineData(560, 380)]
     [InlineData(280, 360)]
@@ -30,7 +33,6 @@ public class PanelLayoutTests
     }
 
     [Theory]
-    [InlineData("E")]
     [InlineData("R")]
     [InlineData("S")]
     public void ReservedHotkeysCannotReplaceVisibilityShortcut(string key) =>

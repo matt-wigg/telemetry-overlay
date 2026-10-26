@@ -8,6 +8,10 @@ All 52 automated tests pass, including stale-data expiry, late delivery, swap-ch
 
 To check the full production collector and IPC path without opening diagnostic windows, quit Telemetry and run `Telemetry.exe --verify-live-fps <process-id> <report-directory>` while the selected DirectX application continuously presents. Approve the collector's Windows prompt. The command observes for 60 seconds and writes `live-fps-validation.json`, including frame age, packet age, FPS availability and reported loss. A five-second warmup is excluded. A real pause, application exit or denied approval does not pass this continuity check. No screenshots or keyboard/mouse automation are used. Restart Telemetry after the diagnostic finishes.
 
+## 0.3.2 placement checks
+
+Release builds passed all 52 automated tests and native desktop smoke verification on two attached displays. Native routing checks cover the top-right corner in foreground, pointer and pinned modes, body clicks not starting a drag, capture cancellation, switching to free placement and restoring the saved position. Existing checks cover resizing, per-display placement, visibility, hotkeys and picker popup routing. These are instrumented desktop checks, not a repeat of borderless-game or physical mouse validation.
+
 ## 0.3 release checks
 
 The 51-test suite passes. It covers interval statistics, Present pairing, bounded delivery/capture, small-desktop fitting, process identity, shell failures and rendering. New regressions verify that a retired presentation surface cannot suppress a fresh replacement, equal-count surface selection is stable, genuine stale samples expire, and a replacement needs at least two intervals.

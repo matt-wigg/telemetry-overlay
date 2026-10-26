@@ -11,7 +11,7 @@ The application is open source under MIT. Source, tests, default configuration, 
 1. Native Windows 11 x64 application, optional sign-in startup, tray lifecycle and a single running UI instance.
 2. Configurable show/hide shortcut; dedicated edit, Controls and record shortcuts. Conflicts are surfaced, with tray actions available.
 3. Automatic foreground-monitor selection, pointer-monitor mode and pinned-monitor mode. Persist placements per display; clamp recovery to visible bounds.
-4. Locked click-through state and explicit edit state with drag/resize. Logical dimensions and interface scale are separate controls.
+4. Permanent top-right drag handle and always-available edge resizing. Logical dimensions and interface scale are separate controls.
 5. Windows system/process metrics; NVIDIA telemetry through the installed driver. No additional monitoring tools or sensor-driver installation.
 6. Own targeted DXGI/D3D9 ETW collector. FPS permission is optional and explicitly user-approved through Windows.
 7. Defined live statistics, bounded recording, CSV and JSON export, and capture-loss indication.
