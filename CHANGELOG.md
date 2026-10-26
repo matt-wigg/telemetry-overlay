@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 — in development
+
+- Separate the measurement widget from Controls; simplify its header, spacing and status footer.
+- Organize Controls into five focused pages with collapsed help and refreshable application selection.
+- Reassert visible widget z-order without activation so borderless games cannot obscure it merely by reordering windows.
+- Re-clamp placement after DPI changes and verify placement, resize persistence and visibility on every connected display.
+- Resolve the foreground application immediately when recording starts.
+- Live game interaction validation remains a release gate.
+
 ## 0.2.0 — correctness and security review
 
 - Place delayed ETW samples into graph buckets by event time.

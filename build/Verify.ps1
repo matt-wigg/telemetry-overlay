@@ -20,6 +20,12 @@ try {
     foreach ($name in @('trayVisible','overlayVisible','controlsVisible','hideWorks','showWorks','editReceivesInput','resizeWorks','positionRemembered','toggleHotkeyRegistered','editHotkeyRegistered','captureHotkeyRegistered','clickThrough','noActivate')) {
         if ($smoke.$name -ne $true) { throw "Native verification failed: $name" }
     }
+    if ($smoke.displayChecks.Count -ne $smoke.monitorCount) { throw 'Not every attached display was checked.' }
+    foreach ($display in $smoke.displayChecks) {
+        foreach ($name in @('placedOnDisplay','resizePersisted','positionRestored','visibleAfterToggle','displayRemembered')) {
+            if ($display.$name -ne $true) { throw "Display verification failed: $name" }
+        }
+    }
     if ($IncludeFps) {
         Write-Host 'Approve the Windows prompt for the Telemetry collector. The DirectX test window closes automatically.'
         $process = Start-Process -FilePath $exe -ArgumentList '--verify-fps', ('"' + $report + '"') -WindowStyle Hidden -Wait -PassThru

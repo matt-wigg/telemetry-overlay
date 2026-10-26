@@ -100,7 +100,6 @@ internal sealed class AppController : IDisposable
         _application = application;
         _overlay = new(_settings);
         _overlay.Moved += SaveSettings;
-        _overlay.EditRequested += ShowSettings;
         _hotkeyWindow = new HwndSource(new HwndSourceParameters("Telemetry hotkeys") { WindowStyle = 0, ExtendedWindowStyle = 0x80, Width = 0, Height = 0 });
         _hotkeyWindow.AddHook(WindowHook);
         _taskbarCreated = Native.RegisterWindowMessage("TaskbarCreated");
@@ -140,6 +139,35 @@ internal sealed class AppController : IDisposable
         bool resizeWorks = _settings.PanelWidth == 400 && _settings.PanelHeight == 620;
         _overlay.SetEditing(false);
         bool positionRemembered = _settings.Placements.ContainsKey(_overlay.CurrentMonitor);
+        var displayChecks = new List<object>();
+        foreach (var screen in Forms.Screen.AllScreens)
+        {
+            _settings.MonitorMode = "Pinned"; _settings.PinnedMonitor = screen.DeviceName;
+            _overlay.RefreshTheme();
+            await Task.Delay(250);
+            var overlayHandle = new WindowInteropHelper(_overlay).Handle;
+            Native.GetWindowRect(overlayHandle, out var before);
+            _overlay.SetEditing(true);
+            Native.SetWindowPos(overlayHandle, new nint(-1), screen.WorkingArea.Left + 60, screen.WorkingArea.Top + 80, 0, 0, 0x0011);
+            _overlay.Width = 380; _overlay.Height = 600;
+            await Task.Delay(100);
+            _overlay.SetEditing(false);
+            Native.GetWindowRect(overlayHandle, out var saved);
+            _overlay.Hide(); _overlay.ShowPanel();
+            await Task.Delay(100);
+            Native.GetWindowRect(overlayHandle, out var restored);
+            var area = screen.WorkingArea;
+            displayChecks.Add(new
+            {
+                monitor = screen.DeviceName,
+                placedOnDisplay = before.Left >= area.Left && before.Top >= area.Top && before.Right <= area.Right && before.Bottom <= area.Bottom,
+                resizePersisted = _settings.PanelWidth == 380 && _settings.PanelHeight == 600,
+                positionRestored = saved.Left == restored.Left && saved.Top == restored.Top,
+                visibleAfterToggle = _overlay.NativeVisible,
+                displayRemembered = _overlay.CurrentMonitor == screen.DeviceName
+            });
+        }
+        _settings.MonitorMode = "Foreground";
         _settings.PanelWidth = 360; _settings.PanelHeight = 554; _overlay.RefreshTheme();
         await Task.Delay(100);
         var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)_overlay.ActualWidth, (int)_overlay.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
@@ -171,6 +199,7 @@ internal sealed class AppController : IDisposable
             clickThrough = (styles & Native.WsExTransparent) != 0,
             noActivate = (styles & Native.WsExNoActivate) != 0,
             monitorCount = Forms.Screen.AllScreens.Length,
+            displayChecks,
             bounds = new { bounds.Left, bounds.Top, bounds.Right, bounds.Bottom },
             uiWorkingSetBytes = process.WorkingSet64
         }, SettingsStore.JsonOptions));
@@ -179,6 +208,16 @@ internal sealed class AppController : IDisposable
         var controlsEncoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
         controlsEncoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(controls));
         using (var file = File.Create(Path.Combine(output, "controls.png"))) controlsEncoder.Save(file);
+        for (int page = 1; page < 5; page++)
+        {
+            _settingsWindow.SelectPageForVerification(page);
+            await Task.Delay(100);
+            var render = new System.Windows.Media.Imaging.RenderTargetBitmap((int)_settingsWindow.ActualWidth, (int)_settingsWindow.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+            render.Render(_settingsWindow);
+            var png = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(render));
+            using var file = File.Create(Path.Combine(output, $"controls-{page}.png")); png.Save(file);
+        }
         _application.Shutdown();
     }
 
@@ -306,6 +345,18 @@ internal sealed class AppController : IDisposable
     private void ToggleCapture()
     {
         if (_capture is not null) { RequestCaptureStop(); return; }
+        var foreground = Native.Foreground();
+        int target = _manualPid > 0 ? _manualPid : foreground.Pid;
+        if (!_restarting && target > 0 && target != Environment.ProcessId && target != _targetPid)
+        {
+            try
+            {
+                using var process = Process.GetProcessById(target);
+                lock (_dataGate) { _targetPid = target; _targetName = process.ProcessName; _history.Clear(); }
+            }
+            catch (Exception e) when (e is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+            { Notify("The selected application is no longer available."); return; }
+        }
         if (_targetPid <= 0 || _restarting) { Notify("Focus a graphics application first."); return; }
         try { lock (_dataGate) _capture = new(_targetPid, _targetName, _packet?.DroppedFrames ?? 0); Notify("Recording " + _targetName + ". Ctrl+Alt+R saves the capture."); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notify(e.Message); SettingsStore.Log(e); }

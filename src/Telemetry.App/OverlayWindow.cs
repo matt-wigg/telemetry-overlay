@@ -14,13 +14,11 @@ internal sealed class OverlayWindow : Window
     private readonly HudCanvas _canvas;
     private readonly AppSettings _settings;
     private nint _handle;
-    private readonly StackPanel _editTools;
     private bool _applyingSize;
     private System.Drawing.Rectangle _lastWorkingArea;
     internal bool Editing { get; private set; }
     internal bool NativeVisible => _handle != 0 && Native.IsWindowVisible(_handle);
     internal event Action? Moved;
-    internal event Action? EditRequested;
     internal string CurrentMonitor { get; private set; } = "";
 
     internal OverlayWindow(AppSettings settings)
@@ -32,16 +30,7 @@ internal sealed class OverlayWindow : Window
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.CanResize;
         AllowsTransparency = true; Background = Brushes.Transparent;
         ShowInTaskbar = false; ShowActivated = false; Topmost = true;
-        var root = new Grid();
-        _canvas = new HudCanvas(settings); root.Children.Add(_canvas);
-        _editTools = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(10, 35, 10, 0), Visibility = Visibility.Collapsed };
-        foreach (var label in new[] { "SETTINGS", "LOCK" })
-        {
-            var button = new Button { Content = label, FontSize = 10, Padding = new Thickness(7, 3, 7, 3), Margin = new Thickness(4, 0, 0, 0), Background = new SolidColorBrush(Color.FromRgb(34, 34, 34)), Foreground = Brushes.WhiteSmoke, BorderBrush = Brushes.DimGray };
-            button.Click += (_, _) => { if (label == "LOCK") SetEditing(false); else EditRequested?.Invoke(); };
-            _editTools.Children.Add(button);
-        }
-        root.Children.Add(_editTools); Content = root;
+        _canvas = new HudCanvas(settings); Content = _canvas;
         Opacity = settings.Opacity;
         SourceInitialized += (_, _) =>
         {
@@ -52,11 +41,11 @@ internal sealed class OverlayWindow : Window
         MouseLeftButtonDown += (_, e) =>
         {
             if (!Editing) return;
-            if (e.ClickCount == 2) { EditRequested?.Invoke(); return; }
             try { DragMove(); SavePosition(); Moved?.Invoke(); }
             catch (InvalidOperationException) { }
         };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) SetEditing(false); };
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(() => { if (!Editing) Place(true); });
         SizeChanged += (_, _) =>
         {
             if (!Editing || _applyingSize) return;
@@ -68,7 +57,6 @@ internal sealed class OverlayWindow : Window
     internal void SetEditing(bool enabled)
     {
         Editing = enabled;
-        _editTools.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
         ApplyInputMode();
         _canvas.Editing = enabled;
         _canvas.InvalidateVisual();
@@ -116,6 +104,9 @@ internal sealed class OverlayWindow : Window
     internal void Place(bool force = false)
     {
         if (_handle == 0 || Editing) return;
+        // A borderless game may reorder its own topmost window without changing monitors.
+        // Restore our z-order without activating, moving or resizing the widget.
+        if (IsVisible) Native.SetWindowPos(_handle, new nint(-1), 0, 0, 0, 0, 0x0013);
         var foreground = Native.Foreground();
         Forms.Screen screen;
         if (_settings.MonitorMode == "Pinned") screen = Forms.Screen.AllScreens.FirstOrDefault(s => s.DeviceName == _settings.PinnedMonitor) ?? Forms.Screen.PrimaryScreen!;
@@ -214,17 +205,16 @@ internal sealed class HudCanvas : FrameworkElement
             dc.DrawText(formatted, new Point(right ? x - formatted.Width : x, y));
         }
         static string Number(double? value, string format = "0") => value is double v && double.IsFinite(v) ? v.ToString(format, CultureInfo.InvariantCulture) : "—";
-        Text("TELEMETRY", 18, 14, 11, _muted);
+        Text(Target, 18, 13, 12, _foreground, width - 120);
         Text(Recording ? "[REC]" : MonitorLabel, rightEdge, 14, 10, Recording ? _critical : _accent, right: true);
         dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(0, 33), new Point(width, 33));
-        Text(Target, 18, 43, 12, _foreground, Editing ? width - 180 : width - 36);
         var stats = Stale ? null : Statistics;
-        Text(Number(stats?.Fps, "0.0"), 16, 72, 38);
-        Text("Application FPS", rightEdge, 80, 11, _muted, right: true);
-        Text("10 s rolling window", rightEdge, 99, 10, _muted, right: true);
-        Text("1% low  " + Number(stats?.OnePercentLow, "0.0"), 18, 125, 11, _muted);
-        Text("Avg " + Number(stats?.MeanMs, "0.00") + " ms", rightEdge, 125, 11, _muted, right: true);
-        double graphTop = 149, graphBottom = 191;
+        Text(Number(stats?.Fps, "0.0"), 16, 54, 38);
+        Text("APP FPS", rightEdge, 62, 11, _muted, right: true);
+        Text("10 s average", rightEdge, 81, 10, _muted, right: true);
+        Text("1% low  " + Number(stats?.OnePercentLow, "0.0"), 18, 111, 11, _muted);
+        Text("Avg " + Number(stats?.MeanMs, "0.00") + " ms", rightEdge, 111, 11, _muted, right: true);
+        double graphTop = 139, graphBottom = 185;
         dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(18, graphBottom), new Point(rightEdge, graphBottom));
         if (Graph.Length > 1 && !Stale)
         {
@@ -245,21 +235,15 @@ internal sealed class HudCanvas : FrameworkElement
             double budgetY = graphBottom - (1000.0 / _settings.TargetFps / ceiling) * (graphBottom - graphTop);
             dc.DrawLine(new Pen(_muted, .4), new Point(18, budgetY), new Point(rightEdge, budgetY));
         }
-        Text("30 s / 0.5 s peaks", 18, 198, 10, _muted);
-        if (stats is null)
-        {
-            string help = Stale ? "Waiting for fresh measurements" : Status.StartsWith("FPS permission required", StringComparison.Ordinal)
-                ? "Enable FPS: Controls > System" : "Waiting for this app to present frames";
-            Text(help, 18, 158, 11, _muted, width - 36);
-        }
-        Text((1000.0 / _settings.TargetFps).ToString("0.00", CultureInfo.InvariantCulture) + " ms budget", rightEdge, 198, 10, _muted, right: true);
-        Text("P99 frame " + Number(stats?.P99Ms, "0.00") + " ms", 18, 219, 11, _muted);
-        Text((stats?.Count.ToString(CultureInfo.InvariantCulture) ?? "0") + " samples", rightEdge, 218, 10, _muted, right: true);
-        dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(18, 243), new Point(rightEdge, 243));
+        Text("FRAME TIME / 30 s", 18, 194, 10, _muted);
+        Text((1000.0 / _settings.TargetFps).ToString("0.00", CultureInfo.InvariantCulture) + " ms budget", rightEdge, 194, 10, _muted, right: true);
+        Text("P99 " + Number(stats?.P99Ms, "0.00") + " ms", 18, 216, 11, _muted);
+        Text((stats?.Count.ToString(CultureInfo.InvariantCulture) ?? "0") + " samples", rightEdge, 216, 10, _muted, right: true);
+        dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(18, 239), new Point(rightEdge, 239));
         var s = Stale ? null : Packet?.Sensors;
-        double y = 254;
+        double y = 251;
         int rowCount = _settings.MetricOrder.Count(id => _settings.ShowDetails || id is not ("POWER" or "CLOCK" or "FAN" or "PROCESS"));
-        double rowHeight = Math.Clamp((height - 325) / Math.Max(1, rowCount), 18, 33);
+        double rowHeight = Math.Clamp((height - 288) / Math.Max(1, rowCount), 18, 33);
         foreach (var id in _settings.MetricOrder)
         {
             if (!_settings.ShowDetails && id is "POWER" or "CLOCK" or "FAN" or "PROCESS") continue;
@@ -288,10 +272,10 @@ internal sealed class HudCanvas : FrameworkElement
             if (_severities.GetValueOrDefault(id) is Severity.Warning or Severity.Critical || (id == "GPU" && _severities.GetValueOrDefault("GPUtemp") is Severity.Warning or Severity.Critical)) Text("!", 7, y, 11, _warning);
             y += rowHeight;
         }
-        dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(0, height - 61), new Point(width, height - 61));
-        Text(s?.GpuLimitReason is { } limit ? "GPU limit: " + limit : s?.GpuName ?? "Graphics device unavailable", 18, height - 52, 10, s?.GpuLimitReason is null ? _muted : _warning, width - 36);
-        Text(Editing ? "Drag to move / drag edges to resize" : Stale ? "Data stale / collector unavailable" : Status, 18, height - 34, 10, Stale ? _warning : _muted, width - 36);
-        Text(Editing ? "Escape locks the panel" : "Ctrl+Alt+" + _settings.ToggleKey + " hides / Ctrl+Alt+E edits", 18, height - 18, 10, Editing ? _accent : _muted);
+        dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(0, height - 31), new Point(width, height - 31));
+        string state = Stale ? "STALE DATA" : Packet?.DroppedFrames > 0 ? "EVENT LOSS" : Recording ? "RECORDING" : stats is not null ? "PRESENT / LIVE" : Status.StartsWith("FPS permission required", StringComparison.Ordinal) ? "FPS ACCESS REQUIRED" : "NO PRESENTS";
+        Text(state, 18, height - 21, 10, Stale || Packet?.DroppedFrames > 0 ? _warning : _muted, width - 150);
+        Text(s?.GpuLimitReason ?? (Editing ? "UNLOCKED" : ""), rightEdge, height - 21, 10, s?.GpuLimitReason is not null ? _warning : _accent, 114, true);
         if (Editing) { dc.DrawLine(new Pen(_accent, 1), new Point(width - 14, height - 5), new Point(width - 5, height - 14)); dc.DrawLine(new Pen(_accent, 1), new Point(width - 9, height - 5), new Point(width - 5, height - 9)); }
         dc.Pop();
     }

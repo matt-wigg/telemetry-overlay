@@ -15,7 +15,7 @@ The application is open source under MIT. Source, tests, default configuration, 
 5. Windows system/process metrics; NVIDIA telemetry through the installed driver. No additional monitoring tools or sensor-driver installation.
 6. Own targeted DXGI/D3D9 ETW collector. FPS permission is optional and explicitly user-approved through Windows.
 7. Defined live statistics, bounded recording, CSV and JSON export, and capture-loss indication.
-8. A self-contained portable build plus per-user installer/uninstaller. Controls has Display, Metrics, Capture and System pages.
+8. A self-contained portable build plus per-user installer/uninstaller. Controls has General, Appearance, Metrics, Capture and Diagnostics pages. The widget has no settings buttons or shortcut instructions.
 
 ## Engineering choices
 

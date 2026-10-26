@@ -1,5 +1,11 @@
 # Verification record
 
+## 0.3 development checks
+
+The 31-test suite passes. Native verification now exercises every connected display: placement within the work area, resize persistence, position restoration, visibility after toggling and remembered display. These five checks passed on each of two displays, alongside the existing 13 native checks. All five Controls pages and the revised widget were rendered and inspected.
+
+The updated z-order handling and actual-game FPS, physical shortcuts and drag/resize workflow still require hands-on verification before a 0.3 release. Programmatic placement tests alone do not establish game compatibility. Raw screenshots, game settings and recordings remain local and ignored.
+
 Version 0.2 is a preview, not universal hardware/game certification. Raw evidence stays in ignored local `work/` directories because it includes process names and machine information.
 
 ## Review and checks

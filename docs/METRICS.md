@@ -28,7 +28,7 @@ Live statistics use the last 10 seconds and one dominant swap chain. At least tw
 - Muted dash: unavailable data. A zero reading is never invented for a missing API.
 - Driver limit flags: thermal / power brake / power cap are named explicitly. A power cap is not proof of a defect.
 
-Warnings require three consecutive samples (normally about 1.5 seconds) and use a two-unit recovery margin. These are display thresholds, not universal safe limits. GPU temperature thresholds are editable. The hardware-reported slowdown threshold appears in System diagnostics when available.
+Warnings require three consecutive samples (normally about 1.5 seconds) and use a two-unit recovery margin. These are display thresholds, not universal safe limits. GPU temperature thresholds are editable. The hardware-reported slowdown threshold appears in Diagnostics when available.
 
 CPU temperature is intentionally absent because Windows has no universal CPU package sensor interface. No ACPI zone is mislabeled as a CPU package sensor.
 

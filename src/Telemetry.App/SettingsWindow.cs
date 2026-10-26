@@ -3,7 +3,6 @@ using System.Globalization;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Markup;
 using System.Windows.Media;
 using Forms = System.Windows.Forms;
 
@@ -11,152 +10,230 @@ namespace Telemetry.App;
 
 internal sealed class SettingsWindow : Window
 {
+    internal void SelectPageForVerification(int index)
+    {
+        if (Content is DockPanel root) root.Children.OfType<TabControl>().Single().SelectedIndex = index;
+    }
     internal void ShowControls()
     {
         Show();
         Native.ShowWindow(new System.Windows.Interop.WindowInteropHelper(this).Handle, 9);
         Activate();
     }
+
     internal SettingsWindow(AppSettings settings, Action<AppSettings, int> apply, Action advanced,
         Func<string> diagnostics, Action toggle, Action edit, Action capture, int currentTarget)
     {
-        Title = "Telemetry · Controls"; Width = 700; Height = 680; MinWidth = 620; MinHeight = 520;
-        Background = ColorBrush("#181818"); Foreground = ColorBrush("#E8E8E8"); FontFamily = new FontFamily("Segoe UI"); FontSize = 13;
-        SourceInitialized += (_, _) => { int dark = 1; Native.DwmSetWindowAttribute(new System.Windows.Interop.WindowInteropHelper(this).Handle, 20, ref dark, sizeof(int)); };
-        Resources = (ResourceDictionary)XamlReader.Parse("""
-        <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-        <Style TargetType="TextBlock"><Setter Property="Foreground" Value="#D4D4D4"/></Style>
-        <Style TargetType="TextBox"><Setter Property="Background" Value="#222222"/><Setter Property="Foreground" Value="#F0F0F0"/><Setter Property="BorderBrush" Value="#454545"/><Setter Property="Padding" Value="8,6"/><Setter Property="CaretBrush" Value="#F0F0F0"/></Style>
-        <Style TargetType="CheckBox"><Setter Property="Foreground" Value="#D4D4D4"/><Setter Property="Margin" Value="0,7,0,7"/></Style>
-        <Style TargetType="Button"><Setter Property="Background" Value="#282828"/><Setter Property="Foreground" Value="#F0F0F0"/><Setter Property="BorderBrush" Value="#484848"/><Setter Property="Padding" Value="13,8"/><Setter Property="Margin" Value="0,0,8,0"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#3A3A3A"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter Property="BorderBrush" Value="#87AFAF"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
-        <Style TargetType="ComboBoxItem"><Setter Property="Foreground" Value="#F0F0F0"/><Setter Property="Padding" Value="8"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem"><Border x:Name="Row" Padding="{TemplateBinding Padding}" Background="#222222"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Row" Property="Background" Value="#404040"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="Row" Property="Background" Value="#343D3D"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
-        <Style TargetType="ComboBox"><Setter Property="Foreground" Value="#F0F0F0"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox"><Grid><ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"><ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="#222222" BorderBrush="#454545" BorderThickness="1" Padding="8"><TextBlock Text="⌄" Foreground="#D4D4D4" HorizontalAlignment="Right"/></Border></ControlTemplate></ToggleButton.Template></ToggleButton><ContentPresenter Content="{TemplateBinding SelectionBoxItem}" Margin="9,7,26,7" IsHitTestVisible="False"/><Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Placement="Bottom" Focusable="False"><Border Background="#222222" BorderBrush="#454545" BorderThickness="1" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"><ScrollViewer MaxHeight="250"><ItemsPresenter/></ScrollViewer></Border></Popup></Grid></ControlTemplate></Setter.Value></Setter></Style>
-        <Style TargetType="TabControl"><Setter Property="Background" Value="#181818"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabControl"><DockPanel><TabPanel DockPanel.Dock="Top" IsItemsHost="True"/><Border BorderBrush="#343434" BorderThickness="0,1,0,0" Padding="0,16,0,0"><ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent"/></Border></DockPanel></ControlTemplate></Setter.Value></Setter></Style>
-        <Style TargetType="TabItem"><Setter Property="Foreground" Value="#A3A3A3"/><Setter Property="Padding" Value="16,12"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem"><Border x:Name="Tab" Background="#181818" BorderThickness="0,0,0,2" BorderBrush="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter ContentSource="Header"/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Foreground" Value="#F0F0F0"/><Setter TargetName="Tab" Property="BorderBrush" Value="#87AFAF"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Tab" Property="Background" Value="#282828"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
-        <Style TargetType="ListBox"><Setter Property="Background" Value="#222222"/><Setter Property="Foreground" Value="#F0F0F0"/><Setter Property="BorderBrush" Value="#454545"/><Setter Property="Padding" Value="6"/></Style>
-        <Style TargetType="ListBoxItem"><Setter Property="Padding" Value="8,5"/></Style>
-        <Style TargetType="ScrollBar"><Setter Property="Width" Value="8"/><Setter Property="Background" Value="#1C1C1C"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar"><Grid Background="{TemplateBinding Background}"><Track x:Name="PART_Track" IsDirectionReversed="True" Orientation="Vertical"><Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0"/></Track.DecreaseRepeatButton><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="#484848" Margin="2,0"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0"/></Track.IncreaseRepeatButton></Track></Grid></ControlTemplate></Setter.Value></Setter></Style>
-        </ResourceDictionary>
-        """);
+        Title = "Telemetry · Controls"; Width = 760; Height = 740; MinWidth = 700; MinHeight = 620;
+        Background = ColorBrush("#181818"); Foreground = ColorBrush("#E8E8E8");
+        FontFamily = new FontFamily("Segoe UI"); FontSize = 13;
+        Resources = new ResourceDictionary { Source = new Uri("/Telemetry;component/Themes/Controls.xaml", UriKind.Relative) };
+        SourceInitialized += (_, _) =>
+        {
+            int dark = 1;
+            Native.DwmSetWindowAttribute(new System.Windows.Interop.WindowInteropHelper(this).Handle, 20, ref dark, sizeof(int));
+        };
         var root = new DockPanel { Margin = new Thickness(28) }; Content = root;
-        var header = new StackPanel { Margin = new Thickness(0, 0, 0, 18) }; DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
-        header.Children.Add(new TextBlock { Text = "TELEMETRY / CONTROLS", FontFamily = new FontFamily("Consolas"), FontSize = 12, Foreground = ColorBrush("#87AFAF") });
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 0) };
-        AddButton(actions, "Show / hide", toggle); AddButton(actions, "Move / resize", edit); AddButton(actions, "Record / stop", capture); header.Children.Add(actions);
-        var footer = new DockPanel { Margin = new Thickness(0, 16, 0, 0) }; DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
-        var save = new Button { Content = "Apply changes", HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(12, 0, 0, 0) }; DockPanel.SetDock(save, Dock.Right); footer.Children.Add(save);
-        var feedback = new TextBlock { Text = "Changes apply immediately when saved.", TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Foreground = ColorBrush("#A3A3A3") }; footer.Children.Add(feedback);
+        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 20) };
+        DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
+        var identity = new StackPanel();
+        identity.Children.Add(new TextBlock { Text = "Telemetry", FontSize = 24, Foreground = ColorBrush("#F0F0F0") });
+        identity.Children.Add(new TextBlock { Text = "WIDGET CONTROLS", FontSize = 10, Foreground = ColorBrush("#87AFAF"), Margin = new Thickness(0, 5, 0, 0) });
+        header.Children.Add(identity);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+        AddButton(actions, "Show / hide", toggle);
+        AddButton(actions, "Move / resize", edit);
+        header.Children.Add(actions);
+
+        var footer = new DockPanel { Margin = new Thickness(0, 18, 0, 0), LastChildFill = true };
+        DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
+        var save = new Button { Content = "Apply changes", Margin = new Thickness(12, 0, 0, 0) };
+        DockPanel.SetDock(save, Dock.Right); footer.Children.Add(save);
+        var feedback = new TextBlock { Text = "Ready", TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Foreground = ColorBrush("#A3A3A3") };
+        footer.Children.Add(feedback);
         var tabs = new TabControl(); root.Children.Add(tabs);
+
         StackPanel Page(string name)
         {
             var panel = new StackPanel { Margin = new Thickness(0, 0, 12, 0) };
-            tabs.Items.Add(new TabItem { Header = name, Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } }); return panel;
+            tabs.Items.Add(new TabItem { Header = name, Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
+            return panel;
         }
-        void Explain(Panel panel, string text) => panel.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Foreground = ColorBrush("#A3A3A3"), Margin = new Thickness(0, 0, 0, 12) });
-        TextBox Field(Panel panel, string label, string text)
+        void Section(Panel panel, string name) => panel.Children.Add(new TextBlock
+        { Text = name.ToUpperInvariant(), FontSize = 10, Foreground = ColorBrush("#87AFAF"), Margin = new Thickness(0, 14, 0, 14) });
+        TextBox Field(Panel panel, string label, string text, string? hint = null)
         {
             var row = new Grid { Margin = new Thickness(0, 0, 0, 10) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
-            row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
-            var box = new TextBox { Text = text }; System.Windows.Automation.AutomationProperties.SetName(box, label);
+            row.ColumnDefinitions.Add(new ColumnDefinition());
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
+            row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, ToolTip = hint });
+            var box = new TextBox { Text = text, ToolTip = hint };
+            System.Windows.Automation.AutomationProperties.SetName(box, label);
             Grid.SetColumn(box, 1); row.Children.Add(box); panel.Children.Add(row); return box;
         }
-        CheckBox Toggle(Panel panel, string label, bool enabled) { var check = new CheckBox { Content = label, IsChecked = enabled }; panel.Children.Add(check); return check; }
+        void Readout(Panel panel, string label, string value)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
+            var key = new TextBlock { Text = value, FontFamily = new FontFamily("Consolas"), Foreground = ColorBrush("#A3A3A3") };
+            DockPanel.SetDock(key, Dock.Right); row.Children.Add(key);
+            row.Children.Add(new TextBlock { Text = label }); panel.Children.Add(row);
+        }
+        CheckBox Toggle(Panel panel, string label, bool enabled)
+        {
+            var check = new CheckBox { Content = label, IsChecked = enabled };
+            panel.Children.Add(check); return check;
+        }
         ComboBox Select(Panel panel, string label, string[] items, int selected = 0)
         {
-            panel.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 7, 0, 5) });
-            var box = new ComboBox { ItemsSource = items, SelectedIndex = selected, Margin = new Thickness(0, 0, 0, 12) };
+            panel.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 0, 0, 7) });
+            var box = new ComboBox { ItemsSource = items, SelectedIndex = selected, Margin = new Thickness(0, 0, 0, 14) };
             System.Windows.Automation.AutomationProperties.SetName(box, label); panel.Children.Add(box); return box;
         }
-        var display = Page("Display");
-        Explain(display, $"Ctrl+Alt+{settings.ToggleKey} toggles the panel. Ctrl+Alt+E unlocks it: drag anywhere to move, or drag an edge to resize. Escape locks it again.");
-        var key = Field(display, "Toggle key · Ctrl + Alt +", settings.ToggleKey);
-        var scale = Field(display, "Text / interface scale", settings.Scale.ToString(CultureInfo.InvariantCulture));
-        var opacity = Field(display, "Panel opacity · 0.5–1", settings.Opacity.ToString(CultureInfo.InvariantCulture));
-        var width = Field(display, "Panel width · logical pixels", settings.PanelWidth.ToString("0", CultureInfo.InvariantCulture));
-        var height = Field(display, "Panel height · logical pixels", settings.PanelHeight.ToString("0", CultureInfo.InvariantCulture));
-        string originalWidth = width.Text, originalHeight = height.Text;
+        void Details(Panel panel, string title, string text)
+        {
+            panel.Children.Add(new Expander { Header = title, Foreground = ColorBrush("#A3A3A3"), Margin = new Thickness(0, 12, 0, 8),
+                Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8, 10, 8, 4), Foreground = ColorBrush("#A3A3A3") } });
+        }
+        static string N(double number) => number.ToString("0.##", CultureInfo.InvariantCulture);
+        static double Parse(TextBox box) => double.Parse(box.Text, CultureInfo.InvariantCulture);
+
+        var general = Page("General");
+        Section(general, "Display");
         string[] modes = ["Foreground", "Pointer", "Pinned"];
-        var mode = Select(display, "Display selection", ["Active application's display", "Display under the pointer", "Fixed display"], Array.IndexOf(modes, settings.MonitorMode));
-        var monitors = Forms.Screen.AllScreens.Select(s => s.DeviceName).ToArray();
-        var monitorNames = Forms.Screen.AllScreens.Select((s, i) => $"Display {i + 1} · {s.Bounds.Width} × {s.Bounds.Height}{(s.Primary ? " · primary" : "")}").ToArray();
-        var monitor = Select(display, "Fixed display", monitorNames, Math.Max(0, Array.IndexOf(monitors, settings.PinnedMonitor)));
-        var startup = Toggle(display, "Launch at Windows sign-in", settings.StartAtSignIn);
-        var show = Toggle(display, "Show panel on launch", settings.ShowOnLaunch);
+        var mode = Select(general, "Follow", ["Active application's display", "Pointer", "Fixed display"], Array.IndexOf(modes, settings.MonitorMode));
+        var screens = Forms.Screen.AllScreens;
+        var monitors = screens.Select(s => s.DeviceName).ToArray();
+        var monitor = Select(general, "Display", screens.Select((s, i) => $"Display {i + 1}{(s.Primary ? " · primary" : "")}").ToArray(), Math.Max(0, Array.IndexOf(monitors, settings.PinnedMonitor)));
+        monitor.IsEnabled = mode.SelectedIndex == 2;
+        mode.SelectionChanged += (_, _) => monitor.IsEnabled = mode.SelectedIndex == 2;
+        Section(general, "Startup");
+        var startup = Toggle(general, "Launch at Windows sign-in", settings.StartAtSignIn);
+        var show = Toggle(general, "Show widget on launch", settings.ShowOnLaunch);
+        Section(general, "Shortcuts");
+        var key = Field(general, "Show / hide · Ctrl + Alt +", settings.ToggleKey, "Choose A–Z. E and R are reserved.");
+        Readout(general, "Move / resize", "Ctrl + Alt + E");
+        Readout(general, "Record / stop", "Ctrl + Alt + R");
+        Readout(general, "Lock after positioning", "Escape");
+        Details(general, "Positioning", "Unlock the widget, drag its body to move it, or drag an edge to resize. Each display keeps its own position. Use Fixed display to keep it on one monitor.");
+
+        var appearance = Page("Appearance");
+        Section(appearance, "Size");
+        var scale = Field(appearance, "Text scale · %", N(settings.Scale * 100), "75–200%. Windows display scaling is applied separately.");
+        var opacity = Field(appearance, "Opacity · %", N(settings.Opacity * 100), "50–100%.");
+        var width = Field(appearance, "Width · logical px", N(settings.PanelWidth));
+        var height = Field(appearance, "Height · logical px", N(settings.PanelHeight));
+        string originalWidth = width.Text, originalHeight = height.Text;
+        Section(appearance, "Theme");
+        var background = Field(appearance, "Background", settings.Theme.Background);
+        var accent = Field(appearance, "Active / busy", settings.Theme.Accent);
+        var warning = Field(appearance, "Warning", settings.Theme.Warning);
+        var critical = Field(appearance, "Critical", settings.Theme.Critical);
+        var font = Field(appearance, "Typeface", settings.Theme.FontFamily, "Installed font-family names; comma-separated fallbacks are supported.");
+        Details(appearance, "Color meanings", "High CPU/GPU utilization is a busy workload, shown in the active color. Warning and critical colors mark memory pressure or configured temperature thresholds.");
+
         var metrics = Page("Metrics");
-        Explain(metrics, "Heavy GPU/CPU utilization is teal. Amber and red indicate configured memory/temperature thresholds. A high workload alone is not a fault.");
-        Explain(metrics, "Select individual rows below. Power is the GPU's board reading; application memory is its working set. Neither is a total-system power or private-memory measurement.");
-        var fps = Field(metrics, "Frame-time budget · target FPS", settings.TargetFps.ToString());
-        var gpuWarn = Field(metrics, "GPU warning / critical °C", $"{settings.GpuWarningC} / {settings.GpuCriticalC}");
-        var accent = Field(metrics, "Active / busy color", settings.Theme.Accent);
-        var warning = Field(metrics, "Warning color", settings.Theme.Warning);
-        var critical = Field(metrics, "Critical color", settings.Theme.Critical);
-        var background = Field(metrics, "Panel background", settings.Theme.Background);
-        var font = Field(metrics, "Typeface", settings.Theme.FontFamily);
-        metrics.Children.Add(new TextBlock { Text = "Visible rows · select a row to reorder it", Margin = new Thickness(0, 6, 0, 6) });
-        var order = new ListBox { Height = 240 };
+        Section(metrics, "Visible rows");
+        var order = new ListBox { Height = 260 };
         foreach (var id in settings.MetricOrder.Concat(AppSettings.MetricNames.Keys.Except(settings.MetricOrder)))
         {
-            var row = new CheckBox
-            {
-                Content = AppSettings.MetricNames[id],
-                Tag = id,
+            var row = new CheckBox { Content = AppSettings.MetricNames[id], Tag = id,
                 IsChecked = settings.MetricOrder.Contains(id) && (settings.ShowDetails || id is not ("POWER" or "CLOCK" or "FAN" or "PROCESS")),
-                Margin = new Thickness(4, 3, 4, 3)
-            };
+                Margin = new Thickness(4, 3, 4, 3) };
             row.Click += (_, _) => order.SelectedItem = row;
             order.Items.Add(row);
         }
+        System.Windows.Automation.AutomationProperties.SetName(order, "Visible metric rows");
         metrics.Children.Add(order);
-        var rowActions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 12) };
-        foreach (var (label, delta) in new[] { ("Move up", -1), ("Move down", 1) }) AddButton(rowActions, label, () => { int i = order.SelectedIndex, n = i + delta; if (i < 0 || n < 0 || n >= order.Items.Count) return; var item = order.Items[i]; order.Items.RemoveAt(i); order.Items.Insert(n, item); order.SelectedIndex = n; });
+        var rowActions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 4) };
+        foreach (var (label, delta) in new[] { ("Move up", -1), ("Move down", 1) })
+            AddButton(rowActions, label, () =>
+            {
+                int i = order.SelectedIndex, next = i + delta;
+                if (i < 0 || next < 0 || next >= order.Items.Count) return;
+                var item = order.Items[i]; order.Items.RemoveAt(i); order.Items.Insert(next, item); order.SelectedIndex = next;
+            });
         metrics.Children.Add(rowActions);
+        Section(metrics, "Thresholds");
+        var fps = Field(metrics, "Frame budget · target FPS", settings.TargetFps.ToString(CultureInfo.InvariantCulture));
+        var gpuWarn = Field(metrics, "GPU warning · °C", N(settings.GpuWarningC));
+        var gpuCritical = Field(metrics, "GPU critical · °C", N(settings.GpuCriticalC));
+        Details(metrics, "Units and sources", "GPU power is board power. App memory is working set. Memory uses GiB. The graph shows the peak present interval in each 0.5-second bucket. CPU temperature is unavailable without a supported driver; this app installs none.");
+
         var capturePage = Page("Capture");
-        Explain(capturePage, "Ctrl+Alt+R records the selected process. The target stays fixed during a recording. CSV files and a JSON summary are saved locally.");
-        var targets = new List<(int Pid, string Label)> { (0, "Automatic / foreground application") };
-        foreach (var process in Process.GetProcesses()) using (process)
+        Section(capturePage, "Application");
+        var targets = new List<(int Pid, string Label)>();
+        var target = Select(capturePage, "Record", []);
+        void RefreshTargets()
         {
-            try { if (process.MainWindowHandle != 0 && process.Id != Environment.ProcessId) targets.Add((process.Id, $"{process.ProcessName} / {process.Id}")); }
-            catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+            int selectedPid = target.SelectedIndex >= 0 && target.SelectedIndex < targets.Count ? targets[target.SelectedIndex].Pid : currentTarget;
+            targets.Clear(); targets.Add((0, "Automatic · foreground application"));
+            foreach (var process in Process.GetProcesses()) using (process)
+            {
+                try { if (process.MainWindowHandle != 0 && process.Id != Environment.ProcessId) targets.Add((process.Id, $"{process.ProcessName} · {process.Id}")); }
+                catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+            }
+            target.ItemsSource = targets.Select(t => t.Label).ToArray();
+            target.SelectedIndex = Math.Max(0, targets.FindIndex(t => t.Pid == selectedPid));
         }
-        var target = Select(capturePage, "Target application", targets.Select(t => t.Label).ToArray(), Math.Max(0, targets.FindIndex(t => t.Pid == currentTarget)));
-        Explain(capturePage, "FPS measures successful DirectX application Present calls. It is not generated/displayed FPS, input latency, or a GPU-busy measurement. OpenGL/Vulkan coverage depends on the application's presentation path and is not guaranteed.");
-        Explain(capturePage, "1% low = reciprocal of the mean slowest 1% of present intervals. P99 uses nearest-rank frame time. Live statistics use a 10-second window; each recording gets its own summary.");
-        var captures = new StackPanel { Orientation = Orientation.Horizontal }; AddButton(captures, "Open captures", () => { var path = Path.Combine(SettingsStore.DirectoryPath, "Captures"); Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { path }, UseShellExecute = true }); }); capturePage.Children.Add(captures);
-        var system = Page("System");
-        Explain(system, "Uses Windows and your installed graphics driver. No sensor driver, companion monitoring app, account, or internet connection is required.");
-        var status = new TextBox { Text = diagnostics(), IsReadOnly = true, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true, MinHeight = 180, FontFamily = new FontFamily("Consolas"), Margin = new Thickness(0, 0, 0, 16) }; system.Children.Add(status);
-        var refresh = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        refresh.Tick += (_, _) => { if (tabs.SelectedIndex == 3) status.Text = diagnostics(); };
-        refresh.Start(); Closed += (_, _) => refresh.Stop();
+        RefreshTargets();
+        var captureActions = new StackPanel { Orientation = Orientation.Horizontal };
+        AddButton(captureActions, "Refresh apps", RefreshTargets);
+        AddButton(captureActions, "Record / stop", capture);
+        AddButton(captureActions, "Open captures", () =>
+        {
+            var path = Path.Combine(SettingsStore.DirectoryPath, "Captures"); Directory.CreateDirectory(path);
+            Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { path }, UseShellExecute = true });
+        });
+        capturePage.Children.Add(captureActions);
+        Section(capturePage, "Recording");
+        Readout(capturePage, "Shortcut", "Ctrl + Alt + R");
+        Readout(capturePage, "Output", "CSV + JSON");
+        Readout(capturePage, "Limits", "60 min / 1 million intervals");
+        Details(capturePage, "Measurement definitions", "APP FPS measures successful application Present-call cadence. It is not displayed/generated FPS or latency. Disable frame generation for comparisons to a game's base rendering rate. Live statistics use 10 seconds. 1% low is 1000 / mean of the slowest 1% of intervals; P99 uses nearest rank.");
+        Details(capturePage, "Capture completeness", "The process stays fixed while recording. Stopping drains buffered frames. Check summary.json for completeness, loss and sample count. Raw captures contain process identifiers and measurements; inspect them before sharing.");
+
+        var system = Page("Diagnostics");
+        Section(system, "Collector");
         var systemActions = new StackPanel { Orientation = Orientation.Horizontal };
-        AddButton(systemActions, "Refresh status", () => status.Text = diagnostics()); AddButton(systemActions, "Enable FPS capture…", advanced); system.Children.Add(systemActions);
-        Explain(system, "\nWindows requires an administrator-approved collector for cross-process FPS tracing. This is a Windows permission, not an extra installation. The panel itself stays unprivileged.");
-        Explain(system, "CPU temperature is not exposed through a universal Windows API. This build intentionally does not install a kernel driver. Detailed GPU telemetry currently supports NVIDIA's installed NVML driver API.");
+        AddButton(systemActions, "Enable FPS…", advanced);
+        system.Children.Add(systemActions);
+        var status = new TextBox { Text = diagnostics(), IsReadOnly = true, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true,
+            MinHeight = 260, FontFamily = new FontFamily("Consolas"), Margin = new Thickness(0, 16, 0, 0) };
+        System.Windows.Automation.AutomationProperties.SetName(status, "Live collector diagnostics");
+        system.Children.Add(status);
+        var refresh = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        refresh.Tick += (_, _) => { if (tabs.SelectedIndex == 4) status.Text = diagnostics(); };
+        refresh.Start(); Closed += (_, _) => refresh.Stop();
+        Details(system, "Permissions and compatibility", "Windows approval enables cross-process FPS for this session. The widget stays unprivileged. GPU sensors use the installed NVIDIA driver; unsupported values remain unavailable. Borderless/windowed games are the intended overlay modes.");
+
         save.Click += (_, _) =>
         {
             try
             {
                 var candidate = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings))!;
                 candidate.StartAtSignIn = startup.IsChecked == true; candidate.ShowOnLaunch = show.IsChecked == true; candidate.ShowDetails = true;
-                candidate.ToggleKey = key.Text.Trim().ToUpperInvariant(); candidate.Scale = double.Parse(scale.Text, CultureInfo.InvariantCulture); candidate.Opacity = double.Parse(opacity.Text, CultureInfo.InvariantCulture);
-                if (width.Text != originalWidth) candidate.PanelWidth = double.Parse(width.Text, CultureInfo.InvariantCulture);
-                if (height.Text != originalHeight) candidate.PanelHeight = double.Parse(height.Text, CultureInfo.InvariantCulture);
-                candidate.TargetFps = int.Parse(fps.Text);
-                candidate.MonitorMode = modes[Math.Max(0, mode.SelectedIndex)]; candidate.PinnedMonitor = monitors[Math.Max(0, monitor.SelectedIndex)];
-                var temperature = gpuWarn.Text.Split('/'); if (temperature.Length != 2) throw new FormatException("Temperature format: warning / critical.");
-                candidate.GpuWarningC = double.Parse(temperature[0], CultureInfo.InvariantCulture); candidate.GpuCriticalC = double.Parse(temperature[1], CultureInfo.InvariantCulture);
-                candidate.Theme.Accent = accent.Text.Trim(); candidate.Theme.Warning = warning.Text.Trim(); candidate.Theme.Critical = critical.Text.Trim(); candidate.Theme.Background = background.Text.Trim(); candidate.Theme.FontFamily = font.Text.Trim();
+                candidate.ToggleKey = key.Text.Trim().ToUpperInvariant(); candidate.Scale = Parse(scale) / 100; candidate.Opacity = Parse(opacity) / 100;
+                if (width.Text != originalWidth) candidate.PanelWidth = Parse(width);
+                if (height.Text != originalHeight) candidate.PanelHeight = Parse(height);
+                candidate.TargetFps = int.Parse(fps.Text, CultureInfo.InvariantCulture);
+                candidate.MonitorMode = modes[Math.Max(0, mode.SelectedIndex)];
+                candidate.PinnedMonitor = monitors.Length == 0 ? null : monitors[Math.Clamp(monitor.SelectedIndex, 0, monitors.Length - 1)];
+                candidate.GpuWarningC = Parse(gpuWarn); candidate.GpuCriticalC = Parse(gpuCritical);
+                candidate.Theme.Accent = accent.Text.Trim(); candidate.Theme.Warning = warning.Text.Trim();
+                candidate.Theme.Critical = critical.Text.Trim(); candidate.Theme.Background = background.Text.Trim(); candidate.Theme.FontFamily = font.Text.Trim();
                 candidate.MetricOrder = order.Items.Cast<CheckBox>().Where(row => row.IsChecked == true).Select(row => (string)row.Tag).ToArray();
-                candidate.PanelHeight = Math.Max(candidate.PanelHeight, candidate.GetMinimumHeight()); candidate.Validate(); apply(candidate, targets[target.SelectedIndex].Pid);
-                width.Text = originalWidth = candidate.PanelWidth.ToString("0", CultureInfo.InvariantCulture);
-                height.Text = originalHeight = candidate.PanelHeight.ToString("0", CultureInfo.InvariantCulture);
-                feedback.Foreground = ColorBrush("#87AFAF"); feedback.Text = "Saved. The panel is up to date.";
+                candidate.PanelHeight = Math.Max(candidate.PanelHeight, candidate.GetMinimumHeight());
+                candidate.Validate(); apply(candidate, targets[Math.Max(0, target.SelectedIndex)].Pid);
+                width.Text = originalWidth = N(candidate.PanelWidth); height.Text = originalHeight = N(candidate.PanelHeight);
+                feedback.Foreground = ColorBrush("#87AFAF"); feedback.Text = "Changes saved";
             }
             catch (Exception e) when (e is FormatException or OverflowException or IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or System.Security.SecurityException)
             { feedback.Foreground = ColorBrush("#FF8787"); feedback.Text = e.Message; }
         };
     }
     private static Brush ColorBrush(string color) => new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
-    private static void AddButton(Panel panel, string label, Action action) { var button = new Button { Content = label }; button.Click += (_, _) => action(); panel.Children.Add(button); }
+    private static void AddButton(Panel panel, string label, Action action)
+    {
+        var button = new Button { Content = label }; button.Click += (_, _) => action(); panel.Children.Add(button);
+    }
 }
