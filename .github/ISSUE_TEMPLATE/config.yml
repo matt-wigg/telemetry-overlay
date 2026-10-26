@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/matt-wigg/telemetry-overlay/security/advisories/new
+    about: Do not post secrets, private captures or exploit details in a public issue.

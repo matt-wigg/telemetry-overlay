@@ -1,0 +1,46 @@
+name: Build and test
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    name: Windows build and tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: global.json
+      - name: Source privacy guard
+        shell: pwsh
+        run: ./build/Check-Source.ps1
+      - name: Locked restore and regression tests
+        shell: pwsh
+        run: |
+          foreach ($project in @('Telemetry.Core.Tests', 'Telemetry.App.Tests')) {
+            dotnet restore "tests/$project/$project.csproj" --locked-mode
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            dotnet test "tests/$project/$project.csproj" -c Release --no-restore
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Self-contained portable build
+        shell: pwsh
+        run: ./build/Publish.ps1 -SkipInstaller
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Telemetry-win-x64
+          path: |
+            artifacts/Telemetry-*-win-x64.zip
+            artifacts/SHA256SUMS.txt
+          retention-days: 7
+          if-no-files-found: error
