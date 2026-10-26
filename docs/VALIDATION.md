@@ -1,5 +1,13 @@
 # Verification record
 
+## 0.3.1 frame delivery investigation
+
+A background-only, 45-second observation of a continuously presenting DirectX game reproduced the 0.3.0 failure: two of 80 readouts after the five-second warmup were unavailable, with a maximum frame age of 2,556 ms and no reported event loss. Repeating the same observation with explicit buffer flushing produced zero unavailable readouts in 80 observations, a maximum frame age of 1,422 ms and no reported loss. These are sequential delivery checks on one machine, not a game-performance comparison or universal timing guarantee. Raw event data remains local under ignored `work/`.
+
+All 52 automated tests pass, including stale-data expiry, late delivery, swap-chain selection, offscreen layout rendering and a missing-target diagnostic regression. The game exited before the additional full collector/IPC observation; that check is not recorded as a pass. No final interactive window tests were performed for this collector-only change.
+
+To check the full production collector and IPC path without opening diagnostic windows, quit Telemetry and run `Telemetry.exe --verify-live-fps <process-id> <report-directory>` while the selected DirectX application continuously presents. Approve the collector's Windows prompt. The command observes for 60 seconds and writes `live-fps-validation.json`, including frame age, packet age, FPS availability and reported loss. A five-second warmup is excluded. A real pause, application exit or denied approval does not pass this continuity check. No screenshots or keyboard/mouse automation are used. Restart Telemetry after the diagnostic finishes.
+
 ## 0.3 release checks
 
 The 51-test suite passes. It covers interval statistics, Present pairing, bounded delivery/capture, small-desktop fitting, process identity, shell failures and rendering. New regressions verify that a retired presentation surface cannot suppress a fresh replacement, equal-count surface selection is stable, genuine stale samples expire, and a replacement needs at least two intervals.

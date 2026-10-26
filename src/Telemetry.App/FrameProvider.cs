@@ -132,12 +132,22 @@ internal sealed unsafe class FrameProvider : IDisposable
     internal (FrameSample[] Frames, string Status, long Dropped) Drain()
     {
         long lost = 0;
-        if (_trace != 0 && _properties != 0 && ControlTraceW(_trace, null, _properties, 0) == 0)
+        uint flushError = 0;
+        if (_trace != 0 && _properties != 0)
         {
-            var properties = Marshal.PtrToStructure<TraceProperties>(_properties);
-            lost = properties.EventsLost;
+            // Querying statistics does not deliver buffered events. Flush on the collector's
+            // 500 ms cadence so ETW batching cannot repeatedly expire live FPS. Consumption
+            // remains asynchronous; preserve event timestamps and the normal freshness limit.
+            flushError = ControlTraceW(_trace, null, _properties, 3); // EVENT_TRACE_CONTROL_FLUSH
+            if (flushError == 0 || ControlTraceW(_trace, null, _properties, 0) == 0)
+                lost = Marshal.PtrToStructure<TraceProperties>(_properties).EventsLost;
         }
-        lock (_gate) { var frames = _pending.ToArray(); _pending.Clear(); return (frames, _status, _dropped + _completedSessionLoss + lost + _accumulator.RejectedForCapacity); }
+        lock (_gate)
+        {
+            var frames = _pending.ToArray(); _pending.Clear();
+            string status = flushError == 0 ? _status : $"DirectX delivery flush error {flushError}";
+            return (frames, status, _dropped + _completedSessionLoss + lost + _accumulator.RejectedForCapacity);
+        }
     }
     internal bool FinishCapture()
     {

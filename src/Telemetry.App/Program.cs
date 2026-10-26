@@ -23,6 +23,13 @@ internal static class Program
                 return 0;
             }
             if (args is ["--frame-workload", var reference]) return NativeValidation.RunWorkload(reference);
+            if (args is ["--verify-live-fps", var processId, var liveReport])
+            {
+                if (!int.TryParse(processId, out int pid) || pid <= 0) return 2;
+                using var diagnosticMutex = new Mutex(true, @"Local\TelemetryOverlay-7B9F1ED2", out bool exclusive);
+                if (!exclusive) return 2;
+                return NativeValidation.VerifyLiveAsync(pid, liveReport).GetAwaiter().GetResult();
+            }
             if (args is ["--verify-fps", var report])
             {
                 using var diagnosticMutex = new Mutex(true, @"Local\TelemetryOverlay-7B9F1ED2", out bool exclusive);

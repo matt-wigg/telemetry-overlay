@@ -48,6 +48,8 @@ Sorting exact bounded samples is intentional. A histogram would reduce cost but 
 
 ## Frame timing
 
+The collector explicitly flushes active ETW buffers on its 500 ms sampling cadence using [ControlTrace with EVENT_TRACE_CONTROL_FLUSH](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-controltracew). A statistics query alone does not request delivery. Consumption remains asynchronous, so a flush is not treated as proof that all events have arrived. The session's one-second automatic flush remains a fallback; failed explicit flushes appear in diagnostics. This reduces delivery latency without altering event timestamps or extending the freshness limit.
+
 The ETW session requests QPC timestamps. Successful start/stop pairs are matched by thread, then intervals are calculated independently per swap chain. DXGI test presents and nonzero HRESULT results are excluded. The dominant eligible swap chain in the current window is shown: it needs at least two intervals and a newest sample less than 2.5 seconds old. This lets a fresh replacement supersede a retired surface with more historical samples. Equal counts use a stable identifier tie-break. Swap chains are never pooled into a false combined FPS. ETW loss and local queue loss are reported. Genuine missing frames remain unavailable; no frozen last-known FPS is substituted.
 
 This captures Present-call cadence, not photon output. GPU-busy, displayed-frame classification and generated FPS are intentionally unavailable. The named session is stable per interactive Windows session and stopped on normal disposal.

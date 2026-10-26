@@ -17,7 +17,7 @@ Telemetry is a native Windows desktop application written in C# on .NET 10. It u
 
 ## Install
 
-Download `Telemetry-Setup-0.3.0.exe` from [Releases](https://github.com/matt-wigg/telemetry-overlay/releases). It installs per user and includes an uninstaller. A portable ZIP is also available. These initial builds are unsigned; publisher signing is a future distribution milestone.
+Download `Telemetry-Setup-0.3.1.exe` from [Releases](https://github.com/matt-wigg/telemetry-overlay/releases). It installs per user and includes an uninstaller. A portable ZIP is also available. These initial builds are unsigned; publisher signing is a future distribution milestone.
 
 Launch **Telemetry Controls** from Start. The panel also has a tray icon. No extra sensor setup is needed for standard monitoring.
 

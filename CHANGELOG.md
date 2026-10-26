@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 — 2026-10-26
+
+- Flush active ETW buffers on the collector's 500 ms sampling cadence. Querying trace statistics alone left presentation events buffered long enough to intermittently blank FPS during continuous rendering.
+- Preserve event timestamps, frame statistics and the existing 2.5-second freshness limit; actual pauses still expire instead of displaying a frozen value. Report flush failures in diagnostics.
+- Add a finite, background-only live FPS validation command that checks the production collector, IPC and readout freshness without screen capture or input automation.
+
 ## 0.3.0 — 2026-10-26
 
 - Separate the measurement widget from Controls; simplify its header, spacing and status footer.

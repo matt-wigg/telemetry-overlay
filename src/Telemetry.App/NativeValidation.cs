@@ -12,6 +12,74 @@ internal static class NativeValidation
 {
     internal sealed record Reference(string SwapChain, double[] SuccessfulPresentTimesMs);
 
+    /// <summary>Observe an already-running app through the production collector without creating a window.</summary>
+    internal static async Task<int> VerifyLiveAsync(int processId, string directory)
+    {
+        Directory.CreateDirectory(directory);
+        string report = Path.Combine(directory, "live-fps-validation.json");
+        Process target;
+        try { target = Process.GetProcessById(processId); }
+        catch (ArgumentException)
+        {
+            File.WriteAllText(report, "{\"passed\":false,\"reason\":\"Selected process is not running\"}");
+            return 2;
+        }
+        using var targetLifetime = target;
+        // Retain a handle to this process instance; never follow a later reuse of its PID.
+        _ = target.Handle;
+        var history = new RingBuffer<FrameSample>(32768);
+        var gate = new object();
+        CollectorPacket? latest = null;
+        long receivedAt = 0;
+        using var collector = new CollectorClient();
+        collector.Packet += packet =>
+        {
+            lock (gate)
+            {
+                latest = packet; receivedAt = Stopwatch.GetTimestamp();
+                foreach (var frame in packet.Frames.Where(f => f.ProcessId == processId)) history.Add(frame);
+            }
+        };
+        if (!await collector.StartAsync(true))
+        {
+            File.WriteAllText(report, "{\"passed\":false,\"reason\":\"Windows permission was not approved\"}");
+            return 2;
+        }
+        var observations = new List<LiveObservation>();
+        await collector.TargetAsync(new(processId, "Live FPS verification"));
+        var elapsed = Stopwatch.StartNew();
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
+        bool exited = false;
+        do
+        {
+            if (target.HasExited) { exited = true; break; }
+            lock (gate)
+            {
+                long now = Stopwatch.GetTimestamp();
+                var window = FrameWindow.Calculate(history.Items(), now * 1000.0 / Stopwatch.Frequency, processId);
+                double? packetAge = receivedAt == 0 ? null : Stopwatch.GetElapsedTime(receivedAt, now).TotalMilliseconds;
+                observations.Add(new(elapsed.Elapsed.TotalSeconds, window.LatestFrameAgeMs, packetAge,
+                    packetAge is < 3000 ? window.Statistics?.Fps : null, latest?.DroppedFrames ?? 0, latest?.FrameStatus));
+            }
+        } while (await timer.WaitForNextTickAsync() && elapsed.Elapsed.TotalSeconds < 60);
+        var steady = observations.Where(o => o.Seconds >= 5).ToArray();
+        bool passed = !exited && steady.Length >= 100 && steady.All(o => o.Fps is not null && o.Lost == 0)
+            && steady.All(o => o.Status == "DirectX · application present cadence");
+        File.WriteAllText(report, JsonSerializer.Serialize(new
+        {
+            passed, exited, observedSeconds = elapsed.Elapsed.TotalSeconds,
+            blankReadingsAfterWarmup = steady.Count(o => o.Fps is null),
+            maxFrameAgeMs = steady.Max(o => o.FrameAgeMs),
+            maxPacketAgeMs = steady.Max(o => o.PacketAgeMs),
+            observations,
+            scope = "60-second background delivery check; requires continuously presenting app. A genuine pause fails continuity, not measurement accuracy. No screen capture or input automation."
+        }, SettingsStore.JsonOptions));
+        return passed ? 0 : 1;
+    }
+
+    private sealed record LiveObservation(double Seconds, double? FrameAgeMs, double? PacketAgeMs,
+        double? Fps, long Lost, string? Status);
+
     internal static async Task<int> VerifyAsync(string directory)
     {
         Directory.CreateDirectory(directory);
