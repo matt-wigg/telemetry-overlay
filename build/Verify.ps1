@@ -21,6 +21,8 @@ try {
         if ($smoke.$name -ne $true) { throw "Native verification failed: $name" }
     }
     if ($smoke.displayChecks.Count -ne $smoke.monitorCount) { throw 'Not every attached display was checked.' }
+    $picker = Get-Content -Raw -LiteralPath (Join-Path $report 'picker.json') | ConvertFrom-Json
+    if (!$picker.captionValid) { throw 'The app picker did not render its label with bounded ellipsis.' }
     foreach ($display in $smoke.displayChecks) {
         foreach ($name in @('placedOnDisplay','resizePersisted','positionRestored','visibleAfterToggle','displayRemembered')) {
             if ($display.$name -ne $true) { throw "Display verification failed: $name" }

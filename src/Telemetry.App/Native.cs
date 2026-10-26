@@ -31,6 +31,10 @@ internal static class Native
     [DllImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] internal static extern bool SetWindowPos(nint hWnd, nint after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetWindowRect(nint hWnd, out Rect rect);
     [DllImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll")] internal static extern nint SetCapture(nint handle);
+    [DllImport("user32.dll")] internal static extern nint GetCapture();
+    [DllImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] internal static extern bool ReleaseCapture();
+    [DllImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] internal static extern bool ClientToScreen(nint handle, ref Point point);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern uint RegisterWindowMessage(string message);
     [DllImport("kernel32.dll")][return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetSystemTimes(out ulong idle, out ulong kernel, out ulong user);
     [DllImport("kernel32.dll")][return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GlobalMemoryStatusEx(ref MemoryStatus status);

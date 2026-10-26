@@ -18,15 +18,18 @@ internal sealed class SettingsWindow : Window
     {
         Show();
         Native.ShowWindow(new System.Windows.Interop.WindowInteropHelper(this).Handle, 9);
+        Topmost = true;
         Activate();
     }
 
     internal SettingsWindow(AppSettings settings, Action<AppSettings, int> apply, Action advanced,
-        Func<string> diagnostics, Action toggle, Action edit, Action capture, int currentTarget)
+        Func<string> diagnostics, Action toggle, Action edit, Action capture, Func<int> currentTarget)
     {
         Title = "Telemetry · Controls"; Width = 760; Height = 740; MinWidth = 700; MinHeight = 620;
         Background = ColorBrush("#181818"); Foreground = ColorBrush("#E8E8E8");
         FontFamily = new FontFamily("Segoe UI"); FontSize = 13;
+        Activated += (_, _) => Topmost = true;
+        Deactivated += (_, _) => Topmost = false;
         Resources = new ResourceDictionary { Source = new Uri("/Telemetry;component/Themes/Controls.xaml", UriKind.Relative) };
         SourceInitialized += (_, _) =>
         {
@@ -101,13 +104,16 @@ internal sealed class SettingsWindow : Window
 
         var general = Page("General");
         Section(general, "Display");
-        string[] modes = ["Foreground", "Pointer", "Pinned"];
-        var mode = Select(general, "Follow", ["Active application's display", "Pointer", "Fixed display"], Array.IndexOf(modes, settings.MonitorMode));
+        string[] modes = ["Foreground", "Pinned"];
+        var mode = Select(general, "Widget mode", ["Follow active app · snap to display corner", "Free placement · choose an app in the header"], Math.Max(0, Array.IndexOf(modes, settings.MonitorMode)));
+        string[] corners = ["TopRight", "TopLeft", "BottomRight", "BottomLeft"];
+        var corner = Select(general, "Follow corner", ["Top right", "Top left", "Bottom right", "Bottom left"], Array.IndexOf(corners, settings.FollowCorner));
         var screens = Forms.Screen.AllScreens;
         var monitors = screens.Select(s => s.DeviceName).ToArray();
         var monitor = Select(general, "Display", screens.Select((s, i) => $"Display {i + 1}{(s.Primary ? " · primary" : "")}").ToArray(), Math.Max(0, Array.IndexOf(monitors, settings.PinnedMonitor)));
-        monitor.IsEnabled = mode.SelectedIndex == 2;
-        mode.SelectionChanged += (_, _) => monitor.IsEnabled = mode.SelectedIndex == 2;
+        monitor.IsEnabled = mode.SelectedIndex == 1; corner.IsEnabled = mode.SelectedIndex == 0;
+        mode.SelectionChanged += (_, _) => { monitor.IsEnabled = mode.SelectedIndex == 1; corner.IsEnabled = mode.SelectedIndex == 0; };
+        var backgroundProcesses = Toggle(general, "Include background processes in the app picker", settings.IncludeBackgroundProcesses);
         EventHandler displayChanged = (_, _) => Dispatcher.BeginInvoke(() =>
         {
             string? selected = monitor.SelectedIndex >= 0 && monitor.SelectedIndex < monitors.Length ? monitors[monitor.SelectedIndex] : settings.PinnedMonitor;
@@ -128,7 +134,7 @@ internal sealed class SettingsWindow : Window
         Readout(general, "Move / resize", "Ctrl + Alt + E");
         Readout(general, "Record / stop", "Ctrl + Alt + R");
         Readout(general, "Lock after positioning", "Escape");
-        Details(general, "Positioning", "Unlock the widget, drag its body to move it, or drag an edge to resize. Each display keeps its own position. Use Fixed display to keep it on one monitor.");
+        Details(general, "Positioning", "Follow mode is click-through and tracks the active application's display. Free placement stays on its chosen display while you use other apps; its header selects the process to monitor. Unlock with Ctrl+Alt+E to drag the body or resize an edge. Moving across displays updates the fixed display. Each display keeps its own free position.");
 
         var appearance = Page("Appearance");
         Section(appearance, "Size");
@@ -175,28 +181,14 @@ internal sealed class SettingsWindow : Window
 
         var capturePage = Page("Capture");
         Section(capturePage, "Application");
-        var targets = new List<(int Pid, string Label)>();
-        var target = Select(capturePage, "Record", []);
-        void RefreshTargets()
-        {
-            int selectedPid = target.SelectedIndex >= 0 && target.SelectedIndex < targets.Count ? targets[target.SelectedIndex].Pid : currentTarget;
-            targets.Clear(); targets.Add((0, "Automatic · foreground application"));
-            foreach (var process in Process.GetProcesses()) using (process)
-            {
-                try { if (process.MainWindowHandle != 0 && process.Id != Environment.ProcessId) targets.Add((process.Id, $"{process.ProcessName} · {process.Id}")); }
-                catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
-            }
-            target.ItemsSource = targets.Select(t => t.Label).ToArray();
-            target.SelectedIndex = Math.Max(0, targets.FindIndex(t => t.Pid == selectedPid));
-        }
-        RefreshTargets();
+        Readout(capturePage, "Target", "Selected in the widget header");
         var captureActions = new StackPanel { Orientation = Orientation.Horizontal };
-        AddButton(captureActions, "Refresh apps", RefreshTargets);
         AddButton(captureActions, "Record / stop", capture);
         AddButton(captureActions, "Open captures", () =>
         {
-            var path = Path.Combine(SettingsStore.DirectoryPath, "Captures"); Directory.CreateDirectory(path);
-            Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { path }, UseShellExecute = true });
+            string? error = FolderLauncher.OpenCaptures();
+            feedback.Text = error ?? "Opened captures in File Explorer";
+            feedback.Foreground = ColorBrush(error is null ? "#87AFAF" : "#FF8787");
         });
         capturePage.Children.Add(captureActions);
         Section(capturePage, "Recording");
@@ -231,13 +223,15 @@ internal sealed class SettingsWindow : Window
                 if (height.Text != originalHeight) candidate.PanelHeight = Parse(height);
                 candidate.TargetFps = int.Parse(fps.Text, CultureInfo.InvariantCulture);
                 candidate.MonitorMode = modes[Math.Max(0, mode.SelectedIndex)];
+                candidate.FollowCorner = corners[Math.Max(0, corner.SelectedIndex)];
+                candidate.IncludeBackgroundProcesses = backgroundProcesses.IsChecked == true;
                 candidate.PinnedMonitor = monitors.Length == 0 ? null : monitors[Math.Clamp(monitor.SelectedIndex, 0, monitors.Length - 1)];
                 candidate.GpuWarningC = Parse(gpuWarn); candidate.GpuCriticalC = Parse(gpuCritical);
                 candidate.Theme.Accent = accent.Text.Trim(); candidate.Theme.Warning = warning.Text.Trim();
                 candidate.Theme.Critical = critical.Text.Trim(); candidate.Theme.Background = background.Text.Trim(); candidate.Theme.FontFamily = font.Text.Trim();
                 candidate.MetricOrder = order.Items.Cast<CheckBox>().Where(row => row.IsChecked == true).Select(row => (string)row.Tag).ToArray();
                 candidate.PanelHeight = Math.Max(candidate.PanelHeight, candidate.GetMinimumHeight());
-                candidate.Validate(); apply(candidate, targets[Math.Max(0, target.SelectedIndex)].Pid);
+                candidate.Validate(); apply(candidate, candidate.MonitorMode == "Foreground" ? 0 : currentTarget());
                 width.Text = originalWidth = N(candidate.PanelWidth); height.Text = originalHeight = N(candidate.PanelHeight);
                 feedback.Foreground = ColorBrush("#87AFAF"); feedback.Text = "Changes saved";
             }

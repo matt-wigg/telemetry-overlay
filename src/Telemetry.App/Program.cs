@@ -82,6 +82,8 @@ internal sealed class AppController : IDisposable
     private SettingsWindow? _settingsWindow;
     private long _lastPacket;
     private int _targetPid, _manualPid, _candidatePid, _candidateTicks;
+    private ProcessChoice? _manualTarget;
+    private ProcessChoice? _captureTarget;
     private string _targetName = "Desktop", _status = "Starting collector";
     private bool _restarting;
     private bool _disposed;
@@ -100,6 +102,11 @@ internal sealed class AppController : IDisposable
         _application = application;
         _overlay = new(_settings);
         _overlay.Moved += SaveSettings;
+        _overlay.TargetSelected += choice =>
+        {
+            if (_capture is not null) { Notify("Stop the recording before changing applications."); return; }
+            SelectTarget(choice);
+        };
         _hotkeyWindow = new HwndSource(new HwndSourceParameters("Telemetry hotkeys") { WindowStyle = 0, ExtendedWindowStyle = 0x80, Width = 0, Height = 0 });
         _hotkeyWindow.AddHook(WindowHook);
         _taskbarCreated = Native.RegisterWindowMessage("TaskbarCreated");
@@ -227,6 +234,18 @@ internal sealed class AppController : IDisposable
             png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(render));
             using var file = File.Create(Path.Combine(output, $"controls-{page}.png")); png.Save(file);
         }
+        _timer.Stop();
+        _settings.MonitorMode = "Pinned"; _settings.PanelWidth = 300; _overlay.RefreshTheme();
+        const string longName = "Application with a deliberately long name";
+        _overlay.SetTarget(new ProcessChoice(42, longName, 0), false);
+        await Task.Delay(100);
+        bool captionValid = _overlay.VerifyPickerCaption(longName);
+        var pickerRender = new System.Windows.Media.Imaging.RenderTargetBitmap((int)_overlay.ActualWidth, (int)_overlay.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        pickerRender.Render(_overlay);
+        var pickerEncoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        pickerEncoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(pickerRender));
+        using (var file = File.Create(Path.Combine(output, "overlay-free.png"))) pickerEncoder.Save(file);
+        File.WriteAllText(Path.Combine(output, "picker.json"), JsonSerializer.Serialize(new { captionValid }));
         _application.Shutdown();
     }
 
@@ -242,7 +261,7 @@ internal sealed class AppController : IDisposable
         Item("Enable FPS capture…", () => _ = EnableFpsAsync());
         Item("Restart standard collector", () => _ = RestartCollectorAsync(false));
         Item("Reload settings", () => { try { ApplySettings(SettingsStore.Load(), _manualPid); Notify(SettingsStore.LoadWarning ?? "Settings reloaded."); } catch (Exception e) { Notify(e.Message); } });
-        Item("Open captures", () => OpenFolder(Path.Combine(SettingsStore.DirectoryPath, "Captures")));
+        Item("Open captures", () => { if (FolderLauncher.OpenCaptures() is { } error) Notify(error); });
         menu.Items.Add(new Forms.ToolStripSeparator());
         Item("Quit Telemetry", () => _application.Shutdown());
         return menu;
@@ -321,8 +340,16 @@ internal sealed class AppController : IDisposable
         try
         {
             var foreground = Native.Foreground();
-            int desired = _capture?.ProcessId ?? (_manualPid > 0 ? _manualPid : foreground.Pid);
-            if (desired != Environment.ProcessId && desired > 0)
+            if (_captureTarget is not null && !_captureTarget.IsRunning) StopCapture();
+            bool selectedExited = _manualTarget is not null && !_manualTarget.IsRunning;
+            if (selectedExited && _capture is not null) StopCapture();
+            int desired = _capture?.ProcessId ?? (selectedExited ? 0 : _manualPid > 0 ? _manualPid : foreground.Pid);
+            if (selectedExited && _capture is null)
+            {
+                lock (_dataGate) { _targetPid = 0; _history.Clear(); }
+                _targetName = _manualTarget!.Name + " · exited";
+            }
+            else if (desired != Environment.ProcessId && desired > 0)
             {
                 if (desired != _candidatePid) { _candidatePid = desired; _candidateTicks = 0; }
                 if (++_candidateTicks >= 2 && desired != _targetPid)
@@ -333,7 +360,7 @@ internal sealed class AppController : IDisposable
                 }
             }
             if (!_restarting) await _collector.TargetAsync(new(_targetPid, _targetName, _overlay.IsVisible || _capture is not null, _captureFinishId));
-            if (_overlay.IsVisible && !_overlay.Editing) _overlay.Place();
+            if (_overlay.IsVisible) _overlay.Place();
             CollectorPacket? packet;
             FrameSample[] frames;
             lock (_dataGate) { packet = _packet; frames = _history.Items().ToArray(); }
@@ -345,6 +372,8 @@ internal sealed class AppController : IDisposable
             if (packet is not null && !stale) _status = packet.DroppedFrames > 0 ? $"Capture incomplete: {packet.DroppedFrames} lost events/samples" : packet.FrameStatus;
             if (frames.Length == 32768 && frames[0].TimestampMs >= nowMs - 10_000) _status = "Live window capped: 32,768 samples";
             if (_captureFinishId > 0) _status = "Finishing capture: draining trace buffers…";
+            if (selectedExited) _status = "Application exited · choose another";
+            _overlay.SetTarget(_manualTarget, _capture is not null);
             _overlay.Update(packet, window.Statistics, window.Graph, _targetName, _status, _capture is not null, stale);
             if (_captureFinishId > 0 && Stopwatch.GetElapsedTime(_captureStopStarted).TotalSeconds > 8) StopCapture();
             if (_captureFinishId == 0 && _capture is { } capture && (capture.LimitReached || DateTimeOffset.UtcNow - capture.Started >= TimeSpan.FromHours(1))) RequestCaptureStop();
@@ -355,6 +384,7 @@ internal sealed class AppController : IDisposable
     private void ToggleCapture()
     {
         if (_capture is not null) { RequestCaptureStop(); return; }
+        if (_manualTarget is not null && !_manualTarget.IsRunning) { Notify("The selected application has exited. Choose another application."); return; }
         var foreground = Native.Foreground();
         int target = _manualPid > 0 ? _manualPid : foreground.Pid;
         if (!_restarting && target > 0 && target != Environment.ProcessId && target != _targetPid)
@@ -368,7 +398,9 @@ internal sealed class AppController : IDisposable
             { Notify("The selected application is no longer available."); return; }
         }
         if (_targetPid <= 0 || _restarting) { Notify("Focus a graphics application first."); return; }
-        try { lock (_dataGate) _capture = new(_targetPid, _targetName, _packet?.DroppedFrames ?? 0); Notify("Recording " + _targetName + ". Ctrl+Alt+R saves the capture."); }
+        var identity = ProcessChoice.Read(_targetPid);
+        if (identity is null) { Notify("The application exited or cannot be inspected."); return; }
+        try { lock (_dataGate) { _capture = new(_targetPid, _targetName, _packet?.DroppedFrames ?? 0); _captureTarget = identity; } Notify("Recording " + _targetName + ". Ctrl+Alt+R saves the capture."); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notify(e.Message); SettingsStore.Log(e); }
     }
     private void RequestCaptureStop()
@@ -383,7 +415,7 @@ internal sealed class AppController : IDisposable
         CaptureWriter? capture;
         lock (_dataGate)
         {
-            capture = _capture; _capture = null; _captureFinishId = 0;
+            capture = _capture; _capture = null; _captureTarget = null; _captureFinishId = 0;
         }
         if (capture is null) return;
         capture.RequestStop(); capture.ConfirmDrain(drained);
@@ -407,13 +439,17 @@ internal sealed class AppController : IDisposable
             var sensors = _packet?.Sensors;
             return $"CPU  {sensors?.CpuName ?? "Unavailable"}\nGPU  {sensors?.GpuName ?? "Unavailable"}\n\n{sensors?.SensorStatus ?? _status}\n\n{_status}\nCollector: {(_packet?.Elevated == true ? "FPS permission enabled" : "Standard user")}\nDropped trace events: {_packet?.DroppedFrames ?? 0}\n\nCPU package temperature: not available via Windows\nGPU temperature: {sensors?.GpuTemperature?.ToString("0") ?? "—"} °C\nGPU slowdown threshold: {sensors?.GpuThermalLimit?.ToString("0") ?? "—"} °C\nGPU power limit: {sensors?.GpuPowerLimit?.ToString("0") ?? "—"} W\nVRAM reserved by driver: {((sensors?.VramReservedGb * 1024)?.ToString("0") ?? "unavailable (legacy VRAM may include reservation)")} MiB\nSystem committed memory: {sensors?.CommitUsedGb?.ToString("0.0") ?? "—"} / {sensors?.CommitTotalGb?.ToString("0.0") ?? "—"} GiB";
         }
-        _settingsWindow = new(_settings, ApplySettings, () => _ = EnableFpsAsync(), Diagnostics, ToggleOverlay, () => { _overlay.ShowPanel(); _overlay.SetEditing(!_overlay.Editing); }, ToggleCapture, _manualPid);
+        _settingsWindow = new(_settings, ApplySettings, () => _ = EnableFpsAsync(), Diagnostics, ToggleOverlay, () => { _overlay.ShowPanel(); _overlay.SetEditing(!_overlay.Editing); }, ToggleCapture, () => _manualPid);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.ShowControls();
     }
     private void ApplySettings(AppSettings candidate, int manualPid)
     {
         candidate.Validate();
+        if (_capture is not null && (manualPid != _manualPid || candidate.MonitorMode != _settings.MonitorMode))
+            throw new InvalidOperationException("Stop the recording before changing the application or mode.");
+        var selection = manualPid == _manualPid ? _manualTarget : manualPid > 0 ? ProcessChoice.Read(manualPid) : null;
+        if (manualPid > 0 && selection is null) throw new InvalidOperationException("That application exited or cannot be inspected. Refresh the list.");
         if (candidate.ToggleKey is "E" or "R" or "S") throw new InvalidOperationException("E, R and S are reserved for placement, recording and settings.");
         if (!TryRegisterToggle(candidate.ToggleKey)) throw new InvalidOperationException("That shortcut is in use. Your existing shortcut is still active.");
         string? priorStartup = SettingsStore.GetStartupCommand();
@@ -425,14 +461,26 @@ internal sealed class AppController : IDisposable
             TryRegisterToggle(_settings.ToggleKey); throw;
         }
         foreach (var property in typeof(AppSettings).GetProperties().Where(p => p.CanWrite)) property.SetValue(_settings, property.GetValue(candidate));
-        _manualPid = manualPid;
+        SelectTarget(candidate.MonitorMode == "Foreground" ? null : selection);
         _tray.Text = "Telemetry · Ctrl+Alt+" + _settings.ToggleKey;
         var oldMenu = _tray.ContextMenuStrip; _tray.ContextMenuStrip = BuildMenu(); oldMenu?.Dispose();
         _overlay.RefreshTheme();
     }
+    private void SelectTarget(ProcessChoice? choice)
+    {
+        if (_manualTarget == choice) return;
+        _manualTarget = choice; _manualPid = choice?.Pid ?? 0;
+        _candidatePid = 0; _candidateTicks = 0;
+        lock (_dataGate)
+        {
+            _targetPid = choice?.Pid ?? 0;
+            _targetName = choice?.Name ?? "Active application";
+            _history.Clear();
+        }
+        _overlay.SetTarget(choice, _capture is not null);
+    }
     private void SaveSettings() { if (_testing) return; try { SettingsStore.Save(_settings); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notify(e.Message); } }
     private void Notify(string text) { _tray.BalloonTipTitle = "Telemetry"; _tray.BalloonTipText = text; _tray.ShowBalloonTip(3500); }
-    private static void OpenFolder(string path) { Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { path }, UseShellExecute = true }); }
     private static Icon CreateIcon()
     {
         using var bitmap = new Bitmap(32, 32);

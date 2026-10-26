@@ -59,6 +59,8 @@ public sealed class AppSettings
     public bool FollowForeground { get; set; } = true;
     public string MonitorMode { get; set; } = "Foreground";
     public string? PinnedMonitor { get; set; }
+    public string FollowCorner { get; set; } = "TopRight";
+    public bool IncludeBackgroundProcesses { get; set; }
     public double Scale { get; set; } = 1;
     public double Opacity { get; set; } = .96;
     public double PanelWidth { get; set; } = 360;
@@ -91,6 +93,7 @@ public sealed class AppSettings
         if (TargetFps is < 24 or > 1000) throw new InvalidDataException("Target FPS must be 24–1000.");
         if (ToggleKey.Length != 1 || ToggleKey[0] is < 'A' or > 'Z' || ToggleKey is "E" or "R" or "S") throw new InvalidDataException("Hotkey must be A–Z, excluding E, R and S (reserved shortcuts).");
         if (MonitorMode is not ("Foreground" or "Pointer" or "Pinned")) throw new InvalidDataException("Invalid monitor mode.");
+        if (FollowCorner is not ("TopLeft" or "TopRight" or "BottomLeft" or "BottomRight")) throw new InvalidDataException("Invalid follow corner.");
         foreach (var pair in new[] { (CpuWarningC, CpuCriticalC), (GpuWarningC, GpuCriticalC) })
             if (!double.IsFinite(pair.Item1) || !double.IsFinite(pair.Item2) || pair.Item1 < 30 || pair.Item2 > 120 || pair.Item1 >= pair.Item2)
                 throw new InvalidDataException("Temperature limits must be ordered and within 30–120°C.");

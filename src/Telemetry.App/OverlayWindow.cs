@@ -13,8 +13,16 @@ internal sealed class OverlayWindow : Window
 {
     private readonly HudCanvas _canvas;
     private readonly AppSettings _settings;
+    private readonly ComboBox _targetPicker;
+    private bool _refreshingTargets;
+    private ProcessChoice? _selectedTarget;
+    private string _automaticLabel = "Active application";
+    internal event Action<ProcessChoice?>? TargetSelected;
     private nint _handle;
     private bool _applyingSize;
+    private bool _dragging;
+    private Native.Point _dragStart;
+    private Native.Rect _dragBounds;
     private System.Drawing.Rectangle _lastWorkingArea;
     internal bool Editing { get; private set; }
     internal double RenderScale => _canvas.RenderScale;
@@ -31,7 +39,25 @@ internal sealed class OverlayWindow : Window
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.CanResize;
         AllowsTransparency = true; Background = Brushes.Transparent;
         ShowInTaskbar = false; ShowActivated = false; Topmost = true;
-        _canvas = new HudCanvas(settings); Content = _canvas;
+        Resources = new ResourceDictionary { Source = new Uri("/Telemetry;component/Themes/Widget.xaml", UriKind.Relative) };
+        _canvas = new HudCanvas(settings);
+        var root = new Grid(); root.Children.Add(_canvas); Content = root;
+        _targetPicker = new ComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+            FontFamily = new FontFamily(settings.Theme.FontFamily), FontSize = 11,
+            Style = (Style)Resources["TargetPicker"], ToolTip = "Choose the application to monitor. System rows remain system-wide.",
+            IsTextSearchEnabled = true
+        };
+        TextSearch.SetTextPath(_targetPicker, "Name");
+        System.Windows.Automation.AutomationProperties.SetName(_targetPicker, "Monitored application");
+        root.Children.Add(_targetPicker);
+        _targetPicker.DropDownOpened += (_, _) => RefreshTargets();
+        _targetPicker.SelectionChanged += (_, _) =>
+        {
+            if (_refreshingTargets || _targetPicker.SelectedItem is not TargetItem item) return;
+            TargetSelected?.Invoke(item.Choice);
+        };
         Opacity = settings.Opacity;
         SourceInitialized += (_, _) =>
         {
@@ -39,30 +65,87 @@ internal sealed class OverlayWindow : Window
             HwndSource.FromHwnd(_handle)?.AddHook(ResizeHook);
             ApplyInputMode();
         };
-        MouseLeftButtonDown += (_, e) =>
-        {
-            if (!Editing) return;
-            try { DragMove(); SavePosition(); Moved?.Invoke(); }
-            catch (InvalidOperationException) { }
-        };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) SetEditing(false); };
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(() => { if (!Editing) Place(true); });
         SizeChanged += (_, _) =>
         {
+            LayoutPicker();
             if (!Editing || _applyingSize) return;
             _settings.PanelWidth = Math.Clamp(ActualWidth / _canvas.RenderScale, 300, 900);
             _settings.PanelHeight = Math.Clamp(ActualHeight / _canvas.RenderScale, _settings.GetMinimumHeight(), 1400);
         };
+        RefreshTargets();
+    }
+
+    private sealed record TargetItem(string Name, ProcessChoice? Choice)
+    {
+        public string Detail => Choice is null ? "AUTO" : "PID " + Choice.Pid.ToString(CultureInfo.InvariantCulture);
+        public override string ToString() => Name;
+    }
+    private void RefreshTargets()
+    {
+        _refreshingTargets = true;
+        try
+        {
+            var choices = ProcessChoice.List(_settings.IncludeBackgroundProcesses).ToList();
+            if (_selectedTarget is not null && !choices.Contains(_selectedTarget)) choices.Insert(0, _selectedTarget);
+            var items = new List<TargetItem> { new(_automaticLabel, null) };
+            items.AddRange(choices.Select(p => new TargetItem(p.Name, p)));
+            _targetPicker.ItemsSource = items;
+            _targetPicker.SelectedItem = items.FirstOrDefault(i => i.Choice == _selectedTarget) ?? items[0];
+        }
+        finally { _refreshingTargets = false; }
+    }
+    internal void SetTarget(ProcessChoice? choice, bool recording)
+    {
+        if (_selectedTarget != choice) { _selectedTarget = choice; RefreshTargets(); }
+        _targetPicker.IsEnabled = !recording;
+    }
+    internal bool VerifyPickerCaption(string expected)
+    {
+        _targetPicker.ApplyTemplate(); _targetPicker.UpdateLayout();
+        bool HasCaption(DependencyObject parent)
+        {
+            if (parent is TextBlock text && text.Text == expected)
+                return text.TextTrimming == TextTrimming.CharacterEllipsis && text.ActualWidth <= _targetPicker.ActualWidth;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+                if (HasCaption(VisualTreeHelper.GetChild(parent, i))) return true;
+            return false;
+        }
+        return HasCaption(_targetPicker);
+    }
+    private void LayoutPicker()
+    {
+        double scale = RenderScale;
+        _targetPicker.Visibility = _settings.MonitorMode == "Pinned" ? Visibility.Visible : Visibility.Collapsed;
+        _targetPicker.Margin = new Thickness(8 * scale, 1 * scale, 0, 0);
+        _targetPicker.Width = Math.Max(150, ActualWidth / scale - 110);
+        _targetPicker.Height = 31;
+        _targetPicker.LayoutTransform = new ScaleTransform(scale, scale);
     }
 
     internal void SetEditing(bool enabled)
     {
+        if (!enabled) FinishDrag();
         Editing = enabled;
         ApplyInputMode();
         _canvas.Editing = enabled;
         _canvas.InvalidateVisual();
         if (enabled) { Activate(); Keyboard.Focus(this); }
         if (!enabled) { SavePosition(); Place(true); Moved?.Invoke(); }
+    }
+    private void FinishDrag()
+    {
+        if (!_dragging) return;
+        _dragging = false;
+        if (Native.GetCapture() == _handle) Native.ReleaseCapture();
+        SavePosition(); Moved?.Invoke();
+    }
+    private void MoveToCursor()
+    {
+        if (Native.GetCursorPos(out var point))
+            Native.SetWindowPos(_handle, new nint(-1), _dragBounds.Left + point.X - _dragStart.X,
+                _dragBounds.Top + point.Y - _dragStart.Y, 0, 0, 0x0011);
     }
     internal void ShowPanel()
     {
@@ -72,6 +155,30 @@ internal sealed class OverlayWindow : Window
     }
     private nint ResizeHook(nint hWnd, int message, nint wParam, nint lParam, ref bool handled)
     {
+        // Use the press message's coordinates, not a later live cursor position: queued
+        // input can already have moved by the time the UI thread handles the press.
+        // Avoid Windows' move loop, which Aero Snaps widgets at display boundaries.
+        if (message == 0x0201 && Editing)
+        {
+            // The free-placement header is an interactive selector, not a drag handle.
+            double clientY = (short)((lParam.ToInt64() >> 16) & 0xffff) / VisualTreeHelper.GetDpi(this).DpiScaleY;
+            if (_settings.MonitorMode == "Pinned" && clientY < 36 * RenderScale) return 0;
+            _dragStart = new Native.Point { X = (short)(lParam.ToInt64() & 0xffff), Y = (short)((lParam.ToInt64() >> 16) & 0xffff) };
+            if (Native.ClientToScreen(hWnd, ref _dragStart) && Native.GetWindowRect(hWnd, out _dragBounds))
+            {
+                Native.SetCapture(hWnd);
+                _dragging = Native.GetCapture() == hWnd;
+                handled = _dragging;
+            }
+            return 0;
+        }
+        if (_dragging && message is 0x0200 or 0x0202)
+        {
+            MoveToCursor();
+            if (message == 0x0202) FinishDrag();
+            handled = true; return 0;
+        }
+        if (_dragging && message is 0x0215 or 0x001F) FinishDrag();
         if (message == 0x0232 && Editing) { SavePosition(); Moved?.Invoke(); }
         if (message != 0x0084 || !Editing) return 0;
         Native.GetWindowRect(hWnd, out var r);
@@ -89,7 +196,9 @@ internal sealed class OverlayWindow : Window
         // Expose a normal, keyboard-accessible window while positioning; locked widgets stay out of Alt+Tab.
         style = Editing
             ? (style | Native.WsExAppWindow) & ~(Native.WsExTransparent | Native.WsExNoActivate | Native.WsExToolWindow)
-            : (style | Native.WsExTransparent | Native.WsExNoActivate | Native.WsExToolWindow) & ~Native.WsExAppWindow;
+            : _settings.MonitorMode == "Pinned"
+                ? (style | Native.WsExToolWindow) & ~(Native.WsExTransparent | Native.WsExNoActivate | Native.WsExAppWindow)
+                : (style | Native.WsExTransparent | Native.WsExNoActivate | Native.WsExToolWindow) & ~Native.WsExAppWindow;
         Native.SetWindowLongPtr(_handle, Native.GwlExStyle, (nint)style);
     }
     internal void RefreshTheme()
@@ -102,18 +211,24 @@ internal sealed class OverlayWindow : Window
         _applyingSize = false;
         Opacity = _settings.Opacity;
         _canvas.RefreshTheme();
+        _targetPicker.FontFamily = new FontFamily(_settings.Theme.FontFamily);
+        _targetPicker.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(_settings.Theme.Background));
+        _targetPicker.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(_settings.Theme.Foreground));
+        _targetPicker.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(_settings.Theme.Accent));
+        ApplyInputMode(); LayoutPicker();
         Place(true);
     }
 
     internal void Place(bool force = false)
     {
-        if (_handle == 0 || Editing) return;
+        if (_handle == 0) return;
         var foreground = Native.Foreground();
         // A borderless game may reorder its own topmost window without changing monitors.
         // Keep our active Controls window above the widget, without taking focus from either.
         nint insertAfter = foreground.Pid == Environment.ProcessId && foreground.Window != _handle
             ? foreground.Window : new nint(-1);
         if (IsVisible) Native.SetWindowPos(_handle, insertAfter, 0, 0, 0, 0, 0x0013);
+        if (Editing) return;
         Forms.Screen screen;
         if (_settings.MonitorMode == "Pinned") screen = Forms.Screen.AllScreens.FirstOrDefault(s => s.DeviceName == _settings.PinnedMonitor) ?? Forms.Screen.PrimaryScreen!;
         else if (_settings.MonitorMode == "Pointer") { Native.GetCursorPos(out var p); screen = Forms.Screen.FromPoint(new System.Drawing.Point(p.X, p.Y)); }
@@ -135,7 +250,10 @@ internal sealed class OverlayWindow : Window
         finally { _applyingSize = false; }
         Native.GetWindowRect(_handle, out var rect);
         int width = Math.Max(100, rect.Right - rect.Left), height = Math.Max(100, rect.Bottom - rect.Top);
-        var position = _settings.Placements.GetValueOrDefault(screen.DeviceName, new Placement(bounds.Width - width - 24, 24));
+        var position = _settings.MonitorMode == "Foreground"
+            ? new Placement(_settings.FollowCorner.EndsWith("Right", StringComparison.Ordinal) ? bounds.Width - width - 24 : 24,
+                _settings.FollowCorner.StartsWith("Bottom", StringComparison.Ordinal) ? bounds.Height - height - 24 : 24)
+            : _settings.Placements.GetValueOrDefault(screen.DeviceName, new Placement(bounds.Width - width - 24, 24));
         int x = bounds.Left + (int)Math.Clamp(position.X, 0, Math.Max(0, bounds.Width - width));
         int y = bounds.Top + (int)Math.Clamp(position.Y, 0, Math.Max(0, bounds.Height - height));
         Native.SetWindowPos(_handle, insertAfter, x, y, 0, 0, 0x0010 | 0x0001);
@@ -147,6 +265,8 @@ internal sealed class OverlayWindow : Window
         Native.GetWindowRect(_handle, out var rect);
         var screen = Forms.Screen.FromHandle(_handle);
         CurrentMonitor = screen.DeviceName;
+        if (_settings.MonitorMode == "Pinned") _settings.PinnedMonitor = CurrentMonitor;
+        _canvas.MonitorLabel = "DISPLAY " + (Array.FindIndex(Forms.Screen.AllScreens, s => s.DeviceName == CurrentMonitor) + 1).ToString("00");
         var b = screen.WorkingArea;
         int x = rect.Left - b.Left, y = rect.Top - b.Top;
         int maxX = Math.Max(0, b.Width - (rect.Right - rect.Left)), maxY = Math.Max(0, b.Height - (rect.Bottom - rect.Top));
@@ -159,6 +279,15 @@ internal sealed class OverlayWindow : Window
     {
         _canvas.Packet = packet; _canvas.Statistics = statistics; _canvas.Graph = graph;
         _canvas.Target = target; _canvas.Status = status; _canvas.Recording = recording; _canvas.Stale = stale;
+        if (_selectedTarget is null && !_targetPicker.IsDropDownOpen && _automaticLabel != target + " · auto")
+        {
+            _automaticLabel = target + " · auto";
+            // Refresh just the selected caption; enumerate processes only when the picker opens.
+            _refreshingTargets = true;
+            _targetPicker.ItemsSource = new[] { new TargetItem(_automaticLabel, null) };
+            _targetPicker.SelectedIndex = 0;
+            _refreshingTargets = false;
+        }
         _canvas.UpdateSeverities();
         if (IsVisible) _canvas.InvalidateVisual();
     }
@@ -223,8 +352,8 @@ internal sealed class HudCanvas : FrameworkElement
             dc.DrawText(formatted, new Point(right ? x - formatted.Width : x, y));
         }
         static string Number(double? value, string format = "0") => value is double v && double.IsFinite(v) ? v.ToString(format, CultureInfo.InvariantCulture) : "—";
-        Text(Target, 18, 13, 12, _foreground, width - 120);
-        Text(Recording ? "[REC]" : MonitorLabel, rightEdge, 14, 10, Recording ? _critical : _accent, right: true);
+        if (_settings.MonitorMode != "Pinned") Text(Target, 18, 13, 12, _foreground, width - 120);
+        Text(Recording ? "[REC]" : MonitorLabel, rightEdge, 11, 10, Recording ? _critical : _accent, right: true);
         dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(0, 33), new Point(width, 33));
         var stats = Stale ? null : Statistics;
         Text(Number(stats?.Fps, "0.0"), 16, 54, 38);
