@@ -437,8 +437,8 @@ internal sealed class HudCanvas : FrameworkElement
         Text("Low FPS", secondColumn, 159, 11, _muted, columnWidth);
         Text(stats is null ? "—" : Number(stats.MeanMs, "0.00") + " ms", 18, 179, 18, _foreground, columnWidth);
         Text(Number(stats?.OnePercentLow), secondColumn, 179, 18, _foreground, columnWidth);
-        Text("Frame-time history", 18, 219, 9, _muted, width - 90);
-        Text("30 s", rightEdge, 219, 9, _muted, 40, right: true);
+        Text("Frame-time history", 18, 219, 9, _muted, width - 110);
+        Text("Last 30 s", rightEdge, 219, 9, _muted, 65, right: true);
         dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(52, 52, 52)), 1), new Point(18, 239), new Point(rightEdge, 239));
         var s = Stale ? null : Packet?.Sensors;
         double y = 251;

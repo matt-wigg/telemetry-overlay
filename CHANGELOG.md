@@ -5,6 +5,7 @@
 - Flush active ETW buffers on the collector's 500 ms sampling cadence. Querying trace statistics alone left presentation events buffered long enough to intermittently blank FPS during continuous rendering.
 - Preserve event timestamps, frame statistics and the existing 2.5-second freshness limit; actual pauses still expire instead of displaying a frozen value. Report flush failures in diagnostics.
 - Add a finite, background-only live FPS validation command that checks the production collector, IPC and readout freshness without screen capture or input automation.
+- Label the graph's time span "Last 30 s" to distinguish its history window from individual frame times in milliseconds.
 
 ## 0.3.0 — 2026-10-26
 
